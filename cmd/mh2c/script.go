@@ -473,9 +473,10 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out io.Writer)
 		receivedCount++
 		printReceivedFrame(out, h2c, received)
 
-		if headers, stream, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, received, h2c.DecodeHeaders); err != nil {
+		if headers, warnings, stream, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, received, h2c.DecodeHeadersDetailed); err != nil {
 			return sawGoAway, err
 		} else if len(headers) > 0 {
+			printHeaderWarnings(out, warnings)
 			printHeaderFields(out, headers)
 			if until == "end_stream" && hasStreamID && stream == streamID && endStream {
 				return sawGoAway, nil
@@ -534,36 +535,36 @@ func consumeHeaderBlockForDisplay(
 	pendingBlock *[]byte,
 	pendingEnd *bool,
 	received frame.Frame,
-	decode func([]byte) ([]hpack.HeaderField, error),
-) ([]hpack.HeaderField, uint32, bool, error) {
+	decode func([]byte) (hpack.DecodeReport, error),
+) ([]hpack.HeaderField, []string, uint32, bool, error) {
 	switch typed := received.(type) {
 	case frame.HeadersFrame:
 		if typed.Flags&frame.FlagHeadersEndHeaders != 0 {
-			headers, err := decode(typed.BlockFragment)
-			return headers, typed.StreamID, typed.Flags&frame.FlagHeadersEndStream != 0, err
+			report, err := decode(typed.BlockFragment)
+			return report.Fields, report.Warnings, typed.StreamID, typed.Flags&frame.FlagHeadersEndStream != 0, err
 		}
 		*pendingStream = typed.StreamID
 		*pendingBlock = append([]byte(nil), typed.BlockFragment...)
 		*pendingEnd = typed.Flags&frame.FlagHeadersEndStream != 0
 	case frame.ContinuationFrame:
 		if *pendingStream == 0 {
-			return nil, 0, false, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.StreamID)
+			return nil, nil, 0, false, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.StreamID)
 		}
 		if typed.StreamID != *pendingStream {
-			return nil, 0, false, fmt.Errorf("CONTINUATION stream mismatch: got %d, want %d", typed.StreamID, *pendingStream)
+			return nil, nil, 0, false, fmt.Errorf("CONTINUATION stream mismatch: got %d, want %d", typed.StreamID, *pendingStream)
 		}
 		*pendingBlock = append(*pendingBlock, typed.BlockFragment...)
 		if typed.Flags&frame.FlagContinuationEndHeaders != 0 {
-			headers, err := decode(*pendingBlock)
+			report, err := decode(*pendingBlock)
 			streamID := *pendingStream
 			endStream := *pendingEnd
 			*pendingStream = 0
 			*pendingBlock = nil
 			*pendingEnd = false
-			return headers, streamID, endStream, err
+			return report.Fields, report.Warnings, streamID, endStream, err
 		}
 	}
-	return nil, 0, false, nil
+	return nil, nil, 0, false, nil
 }
 
 func applySentFrame(h2c *client.Client, sent frame.Frame) {

@@ -74,6 +74,11 @@ func (hf HeaderField) Size() uint32 {
 	return uint32(len(hf.Name) + len(hf.Value) + 32)
 }
 
+type DecodeReport struct {
+	Fields   []HeaderField
+	Warnings []string
+}
+
 // A Decoder is the decoding context for incremental processing of
 // header blocks.
 type Decoder struct {
@@ -94,6 +99,7 @@ type Decoder struct {
 	saveBuf bytes.Buffer
 
 	firstField bool // processing the first field of the header block
+	warnings   []string
 }
 
 // NewDecoder returns a new decoder with the provided maximum dynamic
@@ -216,17 +222,30 @@ func (d *Decoder) at(i uint64) (hf HeaderField, ok bool) {
 // TODO: remove this method and make it incremental later? This is
 // easier for debugging now.
 func (d *Decoder) DecodeFull(p []byte) ([]HeaderField, error) {
+	report, err := d.DecodeFullDetailed(p)
+	if err != nil {
+		return nil, err
+	}
+	return report.Fields, nil
+}
+
+func (d *Decoder) DecodeFullDetailed(p []byte) (DecodeReport, error) {
+	d.warnings = nil
+
 	var hf []HeaderField
 	saveFunc := d.emit
 	defer func() { d.emit = saveFunc }()
 	d.emit = func(f HeaderField) { hf = append(hf, f) }
 	if _, err := d.Write(p); err != nil {
-		return nil, err
+		return DecodeReport{}, err
 	}
 	if err := d.Close(); err != nil {
-		return nil, err
+		return DecodeReport{}, err
 	}
-	return hf, nil
+	return DecodeReport{
+		Fields:   hf,
+		Warnings: append([]string(nil), d.warnings...),
+	}, nil
 }
 
 // Close declares that the decoding is complete and resets the Decoder
@@ -408,12 +427,16 @@ func (d *Decoder) callEmit(hf HeaderField) error {
 	return nil
 }
 
+func (d *Decoder) addWarning(format string, args ...any) {
+	d.warnings = append(d.warnings, fmt.Sprintf(format, args...))
+}
+
 // (same invariants and behavior as parseHeaderFieldRepr)
 func (d *Decoder) parseDynamicTableSizeUpdate() error {
 	// RFC 7541, sec 4.2: This dynamic table size update MUST occur at the
 	// beginning of the first header block following the change to the dynamic table size.
-	if !d.firstField && d.dynTab.size > 0 {
-		return DecodingError{errors.New("dynamic table size update MUST occur at the beginning of a header block")}
+	if !d.firstField {
+		d.addWarning("permissive decode: dynamic table size update after first header field; applying update anyway")
 	}
 
 	buf := d.buf
@@ -422,7 +445,12 @@ func (d *Decoder) parseDynamicTableSizeUpdate() error {
 		return err
 	}
 	if size > uint64(d.dynTab.allowedMaxSize) {
-		return DecodingError{errors.New("dynamic table size update too large")}
+		d.addWarning(
+			"permissive decode: dynamic table size update %d exceeds allowed max %d; expanding limit and applying update",
+			size,
+			d.dynTab.allowedMaxSize,
+		)
+		d.dynTab.allowedMaxSize = uint32(size)
 	}
 	d.dynTab.setMaxSize(uint32(size))
 	d.buf = buf

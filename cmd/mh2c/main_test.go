@@ -78,7 +78,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 	result, err := state.Consume(frame.HeadersFrame{
 		StreamID:      1,
 		BlockFragment: append([]byte(nil), block[:split]...),
-	}, codec.Decode)
+	}, codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(HEADERS) error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 		StreamID:      1,
 		Flags:         frame.FlagContinuationEndHeaders,
 		BlockFragment: append([]byte(nil), block[split:]...),
-	}, codec.Decode)
+	}, codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(CONTINUATION) error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 		StreamID: 1,
 		Flags:    frame.FlagDataEndStream,
 		Data:     []byte("hello"),
-	}, codec.Decode)
+	}, codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(DATA) error = %v", err)
 	}

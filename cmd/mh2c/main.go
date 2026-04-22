@@ -69,9 +69,10 @@ type responseState struct {
 }
 
 type consumeResult struct {
-	headers []hpack.HeaderField
-	data    []byte
-	done    bool
+	headers  []hpack.HeaderField
+	warnings []string
+	data     []byte
+	done     bool
 }
 
 func main() {
@@ -462,9 +463,12 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out io.Writer) (
 			return sawGoAway, nil
 		}
 
-		result, err := state.Consume(f, h2c.DecodeHeaders)
+		result, err := state.Consume(f, h2c.DecodeHeadersDetailed)
 		if err != nil {
 			return sawGoAway, err
+		}
+		if len(result.warnings) > 0 {
+			printHeaderWarnings(out, result.warnings)
 		}
 		if len(result.headers) > 0 {
 			printHeaderFields(out, result.headers)
@@ -508,7 +512,7 @@ func receivePingFrames(h2c *client.Client, want [8]byte, out io.Writer) (bool, e
 	}
 }
 
-func (s *responseState) Consume(f frame.Frame, decode func([]byte) ([]hpack.HeaderField, error)) (consumeResult, error) {
+func (s *responseState) Consume(f frame.Frame, decode func([]byte) (hpack.DecodeReport, error)) (consumeResult, error) {
 	switch typed := f.(type) {
 	case frame.HeadersFrame:
 		if typed.StreamID != s.streamID {
@@ -548,14 +552,15 @@ func (s *responseState) Consume(f frame.Frame, decode func([]byte) ([]hpack.Head
 	return consumeResult{}, nil
 }
 
-func (s *responseState) finishHeaderBlock(decode func([]byte) ([]hpack.HeaderField, error)) (consumeResult, error) {
-	headers, err := decode(s.pendingHeaderBlock)
+func (s *responseState) finishHeaderBlock(decode func([]byte) (hpack.DecodeReport, error)) (consumeResult, error) {
+	report, err := decode(s.pendingHeaderBlock)
 	if err != nil {
 		return consumeResult{}, err
 	}
 	result := consumeResult{
-		headers: headers,
-		done:    s.pendingEndStream,
+		headers:  report.Fields,
+		warnings: report.Warnings,
+		done:     s.pendingEndStream,
 	}
 	s.pendingStreamID = 0
 	s.pendingHeaderBlock = nil
@@ -617,12 +622,19 @@ func printReceivedFrame(out io.Writer, c *client.Client, f frame.Frame) {
 }
 
 func printDecodedHeaders(out io.Writer, c *client.Client, block []byte) {
-	fields, err := c.DecodeHeaders(block)
+	report, err := c.DecodeHeadersDetailed(block)
 	if err != nil {
 		fmt.Fprintf(out, "  header-decode-error: %v\n", err)
 		return
 	}
-	printHeaderFields(out, fields)
+	printHeaderWarnings(out, report.Warnings)
+	printHeaderFields(out, report.Fields)
+}
+
+func printHeaderWarnings(out io.Writer, warnings []string) {
+	for _, warning := range warnings {
+		fmt.Fprintf(out, "  header-warning: %s\n", warning)
+	}
 }
 
 func printHeaderFields(out io.Writer, fields []hpack.HeaderField) {

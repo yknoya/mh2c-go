@@ -102,26 +102,26 @@ func TestConsumeHeaderBlockForDisplay(t *testing.T) {
 		pendingBlock  []byte
 		pendingEnd    bool
 	)
-	headers, streamID, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.HeadersFrame{
+	headers, warnings, streamID, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.HeadersFrame{
 		StreamID:      1,
 		BlockFragment: block[:len(block)/2],
-	}, codec.Decode)
+	}, codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("consumeHeaderBlockForDisplay(HEADERS) error = %v", err)
 	}
-	if len(headers) != 0 || streamID != 0 || endStream {
-		t.Fatalf("HEADERS result = %#v, %d, %t", headers, streamID, endStream)
+	if len(headers) != 0 || len(warnings) != 0 || streamID != 0 || endStream {
+		t.Fatalf("HEADERS result = %#v, %#v, %d, %t", headers, warnings, streamID, endStream)
 	}
-	headers, streamID, endStream, err = consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.ContinuationFrame{
+	headers, warnings, streamID, endStream, err = consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.ContinuationFrame{
 		StreamID:      1,
 		Flags:         frame.FlagContinuationEndHeaders,
 		BlockFragment: block[len(block)/2:],
-	}, codec.Decode)
+	}, codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("consumeHeaderBlockForDisplay(CONTINUATION) error = %v", err)
 	}
-	if streamID != 1 || endStream || fieldValue(headers, ":status") != "200" {
-		t.Fatalf("headers = %#v, streamID = %d, endStream = %t", headers, streamID, endStream)
+	if streamID != 1 || len(warnings) != 0 || endStream || fieldValue(headers, ":status") != "200" {
+		t.Fatalf("headers = %#v, warnings = %#v, streamID = %d, endStream = %t", headers, warnings, streamID, endStream)
 	}
 }
 

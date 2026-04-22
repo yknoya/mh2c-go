@@ -173,6 +173,10 @@ func (c *Client) DecodeHeaders(block []byte) ([]hpack.HeaderField, error) {
 	return c.responseCodec.Decode(block)
 }
 
+func (c *Client) DecodeHeadersDetailed(block []byte) (hpack.DecodeReport, error) {
+	return c.responseCodec.DecodeDetailed(block)
+}
+
 func (c *Client) RequestCodec() *hpack.Codec {
 	return c.requestCodec
 }

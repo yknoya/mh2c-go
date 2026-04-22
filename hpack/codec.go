@@ -50,5 +50,13 @@ func (c *Codec) Encode(fields []HeaderField) ([]byte, error) {
 }
 
 func (c *Codec) Decode(block []byte) ([]HeaderField, error) {
-	return c.decoder.DecodeFull(block)
+	report, err := c.DecodeDetailed(block)
+	if err != nil {
+		return nil, err
+	}
+	return report.Fields, nil
+}
+
+func (c *Codec) DecodeDetailed(block []byte) (DecodeReport, error) {
+	return c.decoder.DecodeFullDetailed(block)
 }
