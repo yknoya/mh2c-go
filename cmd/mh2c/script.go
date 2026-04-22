@@ -212,7 +212,7 @@ func executeScript(h2c *client.Client, script scriptFile, out *outputController)
 				return sawGoAway, err
 			}
 			applySentFrame(h2c, sent)
-			if err := out.HandleSent(sent); err != nil {
+			if err := out.HandleSent(h2c, sent); err != nil {
 				return sawGoAway, err
 			}
 		}
@@ -513,7 +513,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -529,7 +529,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}

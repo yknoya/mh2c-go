@@ -13,25 +13,29 @@ import (
 	"github.com/yknoya/mh2c-go/hpack"
 )
 
-func TestOutputControllerAppliesFrameAndStreamFilters(t *testing.T) {
+func TestOutputControllerAppliesFrameStreamAndDirectionFilters(t *testing.T) {
 	t.Parallel()
 
 	var out bytes.Buffer
 	controller, err := newOutputController(&out, config{
-		mode:            "observe",
-		outputFormat:    outputFormatText,
-		dataFormat:      dataFormatBoth,
-		decodeHeaders:   true,
-		showHeaderBlock: true,
-		frameFilters:    stringFlags{"data"},
-		hasStreamFilter: true,
-		streamFilter:    1,
+		mode:             "observe",
+		outputFormat:     outputFormatText,
+		dataFormat:       dataFormatBoth,
+		decodeHeaders:    true,
+		showHeaderBlock:  true,
+		frameFilters:     stringFlags{"data"},
+		directionFilters: stringFlags{"received"},
+		hasStreamFilter:  true,
+		streamFilter:     1,
 	})
 	if err != nil {
 		t.Fatalf("newOutputController() error = %v", err)
 	}
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	if err := controller.HandleSent(h2c, frame.DataFrame{StreamID: 1, Data: []byte("sent")}); err != nil {
+		t.Fatalf("HandleSent(data stream=1) error = %v", err)
+	}
 	if err := controller.HandleReceived(h2c, frame.SettingsFrame{}); err != nil {
 		t.Fatalf("HandleReceived(settings) error = %v", err)
 	}
@@ -43,11 +47,54 @@ func TestOutputControllerAppliesFrameAndStreamFilters(t *testing.T) {
 	}
 
 	text := out.String()
-	if strings.Contains(text, "SETTINGS") || strings.Contains(text, "stream=3") {
+	if strings.Contains(text, "SETTINGS") || strings.Contains(text, "stream=3") || strings.Contains(text, "sent") {
 		t.Fatalf("unexpected filtered output: %q", text)
 	}
 	if !strings.Contains(text, "DATA stream=1") {
 		t.Fatalf("output = %q, want DATA stream=1", text)
+	}
+}
+
+func TestOutputControllerDisplaysDecodedSentHeaders(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "request",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	fields := []hpack.HeaderField{
+		{Name: ":method", Value: "GET"},
+		{Name: ":path", Value: "/demo"},
+		{Name: ":scheme", Value: "https"},
+		{Name: ":authority", Value: "example.com"},
+	}
+	block, err := h2c.EncodeHeaders(fields)
+	if err != nil {
+		t.Fatalf("EncodeHeaders() error = %v", err)
+	}
+	if err := controller.HandleSent(h2c, frame.HeadersFrame{
+		StreamID:      1,
+		Flags:         frame.FlagHeadersEndHeaders | frame.FlagHeadersEndStream,
+		BlockFragment: block,
+	}); err != nil {
+		t.Fatalf("HandleSent(headers) error = %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, "header-block-fragment:") {
+		t.Fatalf("output = %q, want header block fragment", text)
+	}
+	if !strings.Contains(text, "header :method: GET") || !strings.Contains(text, "header :authority: example.com") {
+		t.Fatalf("output = %q, want decoded sent headers", text)
 	}
 }
 

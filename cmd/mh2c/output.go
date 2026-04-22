@@ -26,19 +26,23 @@ const (
 )
 
 type outputController struct {
-	out             io.Writer
-	format          string
-	dataFormat      string
-	dataLimit       uint
-	decodeHeaders   bool
-	showHeaderBlock bool
-	frameFilters    map[string]bool
-	hasStreamFilter bool
-	streamFilter    uint32
-	pendingStream   uint32
-	pendingBlock    []byte
-	pendingEnd      bool
-	capture         *captureManager
+	out               io.Writer
+	format            string
+	dataFormat        string
+	dataLimit         uint
+	decodeHeaders     bool
+	showHeaderBlock   bool
+	frameFilters      map[string]bool
+	directionFilter   map[string]bool
+	hasStreamFilter   bool
+	streamFilter      uint32
+	sentPendingStream uint32
+	sentPendingBlock  []byte
+	sentPendingEnd    bool
+	pendingStream     uint32
+	pendingBlock      []byte
+	pendingEnd        bool
+	capture           *captureManager
 }
 
 type jsonHeaderField struct {
@@ -90,6 +94,7 @@ func newOutputController(out io.Writer, cfg config) (*outputController, error) {
 		decodeHeaders:   cfg.decodeHeaders,
 		showHeaderBlock: cfg.showHeaderBlock,
 		frameFilters:    filters,
+		directionFilter: buildDirectionFilterSet(cfg.directionFilters),
 		hasStreamFilter: cfg.hasStreamFilter,
 		streamFilter:    uint32(cfg.streamFilter),
 	}
@@ -135,6 +140,9 @@ func newAutoCaptureManager(bodyPath, headersPath string) *captureManager {
 }
 
 func (o *outputController) PrintNotice(direction, kind, summary string) error {
+	if !o.shouldDisplayDirection(direction) {
+		return nil
+	}
 	if o.format == outputFormatJSONL {
 		return o.writeJSON(jsonFrameEvent{
 			Direction: direction,
@@ -150,14 +158,15 @@ func (o *outputController) PrintNotice(direction, kind, summary string) error {
 	return err
 }
 
-func (o *outputController) HandleSent(f frame.Frame) error {
-	if !o.shouldDisplay(f) {
+func (o *outputController) HandleSent(h2c *client.Client, f frame.Frame) error {
+	headers, warnings := o.decodeSentHeaders(h2c, f)
+	if !o.shouldDisplay("sent", f) {
 		return nil
 	}
 	if o.format == outputFormatJSONL {
-		return o.writeJSON(o.buildJSONEvent("sent", f, nil, nil))
+		return o.writeJSON(o.buildJSONEvent("sent", f, headers, warnings))
 	}
-	return o.writeTextFrame(">>", f, nil, nil)
+	return o.writeTextFrame(">>", f, headers, warnings)
 }
 
 func (o *outputController) HandleReceived(h2c *client.Client, f frame.Frame) error {
@@ -166,7 +175,7 @@ func (o *outputController) HandleReceived(h2c *client.Client, f frame.Frame) err
 		return err
 	}
 	o.captureReceived(streamID, headers, endStream, f)
-	if !o.shouldDisplay(f) {
+	if !o.shouldDisplay("received", f) {
 		return nil
 	}
 	if o.format == outputFormatJSONL {
@@ -180,6 +189,39 @@ func (o *outputController) Flush() error {
 		return nil
 	}
 	return o.capture.Flush()
+}
+
+func (o *outputController) decodeSentHeaders(h2c *client.Client, f frame.Frame) ([]hpack.HeaderField, []string) {
+	if !o.decodeHeaders || h2c == nil {
+		return nil, nil
+	}
+
+	headers, warnings, _, _, err := consumeHeaderBlockForDisplay(
+		&o.sentPendingStream,
+		&o.sentPendingBlock,
+		&o.sentPendingEnd,
+		f,
+		h2c.RequestCodec().DecodeDetailed,
+	)
+	if err != nil {
+		o.sentPendingStream = 0
+		o.sentPendingBlock = nil
+		o.sentPendingEnd = false
+		return nil, []string{fmt.Sprintf("sent header decode skipped: %v", err)}
+	}
+	if len(headers) > 0 {
+		return headers, warnings
+	}
+
+	typed, ok := f.(frame.PushPromiseFrame)
+	if !ok || typed.Flags&frame.FlagPushPromiseEndHeaders == 0 {
+		return nil, nil
+	}
+	report, err := h2c.RequestCodec().DecodeDetailed(typed.BlockFragment)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("sent header decode skipped: %v", err)}
+	}
+	return report.Fields, report.Warnings
 }
 
 func (o *outputController) decodeReceivedHeaders(h2c *client.Client, f frame.Frame) ([]hpack.HeaderField, []string, uint32, bool, error) {
@@ -234,7 +276,17 @@ func (o *outputController) captureReceived(streamID uint32, headers []hpack.Head
 	}
 }
 
-func (o *outputController) shouldDisplay(f frame.Frame) bool {
+func (o *outputController) shouldDisplayDirection(direction string) bool {
+	if len(o.directionFilter) == 0 {
+		return true
+	}
+	return o.directionFilter[direction]
+}
+
+func (o *outputController) shouldDisplay(direction string, f frame.Frame) bool {
+	if !o.shouldDisplayDirection(direction) {
+		return false
+	}
 	if len(o.frameFilters) > 0 && !o.frameFilters[frameTypeName(f)] {
 		return false
 	}
@@ -507,6 +559,36 @@ func buildFrameFilterSet(values []string) (map[string]bool, error) {
 		filters[name] = true
 	}
 	return filters, nil
+}
+
+func buildDirectionFilterSet(values []string) map[string]bool {
+	if len(values) == 0 {
+		return nil
+	}
+	filters := make(map[string]bool, len(values))
+	for _, value := range values {
+		filters[strings.ToLower(strings.TrimSpace(value))] = true
+	}
+	return filters
+}
+
+func validateDirectionFilters(values []string) error {
+	for _, value := range values {
+		name := strings.ToLower(strings.TrimSpace(value))
+		if !isSupportedDirectionFilter(name) {
+			return fmt.Errorf("invalid direction-filter %q", value)
+		}
+	}
+	return nil
+}
+
+func isSupportedDirectionFilter(name string) bool {
+	switch name {
+	case "sent", "received":
+		return true
+	default:
+		return false
+	}
 }
 
 func isSupportedFrameFilter(name string) bool {

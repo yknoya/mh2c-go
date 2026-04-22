@@ -55,36 +55,37 @@ func (f *optionalUintFlag) Set(src string) error {
 }
 
 type config struct {
-	mode            string
-	scriptFile      string
-	rawURL          string
-	scheme          string
-	host            string
-	authority       string
-	path            string
-	method          string
-	data            string
-	bodyFile        string
-	pingData        string
-	timeout         time.Duration
-	maxTable        uint
-	port            uint
-	streamID        uint
-	maxRecv         uint
-	streamFilter    uint
-	hasStreamFilter bool
-	insecure        bool
-	sendGoAway      bool
-	outputFormat    string
-	dataFormat      string
-	dataLimit       uint
-	decodeHeaders   bool
-	showHeaderBlock bool
-	saveOutput      string
-	saveBody        string
-	saveHeaders     string
-	headers         headerFlags
-	frameFilters    stringFlags
+	mode             string
+	scriptFile       string
+	rawURL           string
+	scheme           string
+	host             string
+	authority        string
+	path             string
+	method           string
+	data             string
+	bodyFile         string
+	pingData         string
+	timeout          time.Duration
+	maxTable         uint
+	port             uint
+	streamID         uint
+	maxRecv          uint
+	streamFilter     uint
+	hasStreamFilter  bool
+	insecure         bool
+	sendGoAway       bool
+	outputFormat     string
+	dataFormat       string
+	dataLimit        uint
+	decodeHeaders    bool
+	showHeaderBlock  bool
+	saveOutput       string
+	saveBody         string
+	saveHeaders      string
+	headers          headerFlags
+	frameFilters     stringFlags
+	directionFilters stringFlags
 }
 
 type endpoint struct {
@@ -228,7 +229,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 			ErrorCode:    frame.ErrNo,
 		}
 		if err := h2c.SendFrame(goAway); err == nil {
-			_ = controller.HandleSent(goAway)
+			_ = controller.HandleSent(h2c, goAway)
 		}
 	}
 	return controller.Flush()
@@ -280,13 +281,14 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&cfg.outputFormat, "output", cfg.outputFormat, "output format: text or jsonl")
 	fs.StringVar(&cfg.dataFormat, "data-format", cfg.dataFormat, "payload format: text, hex, or both")
 	fs.UintVar(&cfg.dataLimit, "data-limit", 0, "truncate payload display to the first N bytes; 0 means unlimited")
-	fs.BoolVar(&cfg.decodeHeaders, "decode-headers", cfg.decodeHeaders, "decode received HPACK header blocks")
+	fs.BoolVar(&cfg.decodeHeaders, "decode-headers", cfg.decodeHeaders, "decode HPACK header blocks")
 	fs.BoolVar(&cfg.showHeaderBlock, "show-header-block", cfg.showHeaderBlock, "show HPACK/header block fragments")
 	fs.StringVar(&cfg.saveOutput, "save-output", "", "write the displayed CLI output to a file as well")
 	fs.StringVar(&cfg.saveBody, "save-body", "", "save the captured response body to a file")
 	fs.StringVar(&cfg.saveHeaders, "save-headers", "", "save the decoded response headers to a file")
 	fs.Var(&cfg.headers, "header", "request header in 'name:value' format; repeatable")
 	fs.Var(&cfg.frameFilters, "frame-filter", "only display specific frame types; repeatable")
+	fs.Var(&cfg.directionFilters, "direction-filter", "only display sent or received events; repeatable")
 
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
@@ -312,6 +314,9 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 		return config{}, fmt.Errorf("invalid data-format %q: want text, hex, or both", cfg.dataFormat)
 	}
 	if _, err := buildFrameFilterSet(cfg.frameFilters); err != nil {
+		return config{}, err
+	}
+	if err := validateDirectionFilters(cfg.directionFilters); err != nil {
 		return config{}, err
 	}
 	if (cfg.saveBody != "" || cfg.saveHeaders != "") && cfg.mode != "request" && cfg.mode != "observe" {
@@ -542,7 +547,7 @@ func sendFrameAndReport(h2c *client.Client, out *outputController, f frame.Frame
 	if err := h2c.SendFrame(f); err != nil {
 		return err
 	}
-	return out.HandleSent(f)
+	return out.HandleSent(h2c, f)
 }
 
 func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputController) (bool, error) {
@@ -565,7 +570,7 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputContr
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -575,7 +580,7 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputContr
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -612,7 +617,7 @@ func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) 
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -622,7 +627,7 @@ func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) 
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 				continue
@@ -661,7 +666,7 @@ func receiveObserveFrames(h2c *client.Client, maxRecv uint, out *outputControlle
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -671,7 +676,7 @@ func receiveObserveFrames(h2c *client.Client, maxRecv uint, out *outputControlle
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := out.HandleSent(h2c, ack); err != nil {
 					return sawGoAway, err
 				}
 			}

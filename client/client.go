@@ -190,7 +190,7 @@ func (c *Client) applyFrame(f frame.Frame) {
 	case frame.SettingsFrame:
 		for _, setting := range typed.Settings {
 			if setting.ID == frame.SettingHeaderTableSize {
-				c.requestCodec.SetEncoderMaxDynamicTableSize(setting.Value)
+				c.requestCodec.SetMaxDynamicTableSize(setting.Value)
 			}
 		}
 	}

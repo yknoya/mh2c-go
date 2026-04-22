@@ -122,6 +122,7 @@ func TestParseConfigObserveMode(t *testing.T) {
 		"--mode", "observe",
 		"--output", "jsonl",
 		"--data-format", "hex",
+		"--direction-filter", "received",
 		"--stream-filter", "3",
 		"--frame-filter", "data",
 		"--max-recv", "10",
@@ -138,6 +139,9 @@ func TestParseConfigObserveMode(t *testing.T) {
 	if len(cfg.frameFilters) != 1 || cfg.frameFilters[0] != "data" {
 		t.Fatalf("frameFilters = %#v", cfg.frameFilters)
 	}
+	if len(cfg.directionFilters) != 1 || cfg.directionFilters[0] != "received" {
+		t.Fatalf("directionFilters = %#v", cfg.directionFilters)
+	}
 }
 
 func TestParseConfigRejectsSaveBodyOutsideRequestOrObserve(t *testing.T) {
@@ -150,6 +154,18 @@ func TestParseConfigRejectsSaveBodyOutsideRequestOrObserve(t *testing.T) {
 	}, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "save-body and save-headers are only supported") {
 		t.Fatalf("parseConfig() error = %v, want save-body validation", err)
+	}
+}
+
+func TestParseConfigRejectsInvalidDirectionFilter(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	_, err := parseConfig([]string{
+		"--direction-filter", "outbound",
+	}, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "invalid direction-filter") {
+		t.Fatalf("parseConfig() error = %v, want direction-filter validation", err)
 	}
 }
 
