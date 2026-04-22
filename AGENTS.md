@@ -1,0 +1,60 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+This repository is a Go module for manual HTTP/2 debugging. Keep changes close
+to the package they affect.
+
+- `cmd/mh2c/`: CLI entrypoint, script-mode parser, and CLI tests
+- `client/`: connection preface, frame send/receive, HPACK helpers, integration tests
+- `frame/`: HTTP/2 frame types, binary encoding/decoding, frame unit tests
+- `hpack/`: HPACK implementation and codec wrappers
+- `tlsconn/`: TLS + ALPN `h2` bootstrap
+- `internal/wire/`: low-level wire helpers shared by packages
+
+Tests live next to the code as `*_test.go`.
+
+## Build, Test, and Development Commands
+
+Use the `Makefile` for the common path, or run Go commands directly.
+
+- `make build`: build all packages with `go build ./...`
+- `make test`: run the full test suite with `go test ./...`
+- `make fmt`: format all Go packages with `go fmt ./...`
+- `go run ./cmd/mh2c --help`: inspect CLI options locally
+- `go run ./cmd/mh2c --mode script --script-file ./request.toml`: run a scripted frame sequence
+
+Run `make fmt` and `make test` before opening a PR.
+
+## Coding Style & Naming Conventions
+
+Follow standard Go formatting and keep files `gofmt`-clean. Use tabs as Go
+formats them. Package names stay short and lowercase (`frame`, `client`,
+`tlsconn`). Exported identifiers use `CamelCase`; unexported helpers use
+`camelCase`.
+
+Prefer small, protocol-focused changes. This project is a manual HTTP/2 client,
+not a high-level convenience client, so preserve frame-level visibility and
+explicit control in the CLI.
+
+## Testing Guidelines
+
+Use the standard `testing` package. Add focused unit tests in the touched
+package and add integration coverage when behavior crosses package boundaries,
+for example `client/integration_test.go`.
+
+Name tests by behavior, such as `TestPushPromiseFrameRoundTrip` or
+`TestHTTP2RoundTripAgainstTLSServer`.
+
+## Commit & Pull Request Guidelines
+
+Commits currently follow concise Conventional Commit style, e.g.
+`feat: add manual http2 cli scripting and integration coverage`.
+
+PRs should include:
+
+- a short summary of the protocol or CLI behavior changed
+- the verification commands you ran, usually `make fmt` and `make test`
+- sample frame output only when it helps explain a debugging-oriented change
+
+Screenshots are usually unnecessary for this repository.
