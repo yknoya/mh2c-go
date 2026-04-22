@@ -19,6 +19,20 @@ The current implementation provides:
 ## Install
 
 ```sh
+make build-cli
+./bin/mh2c --help
+```
+
+Or install it into your Go bin directory:
+
+```sh
+go install ./cmd/mh2c
+mh2c --help
+```
+
+The repository-wide build still works as before:
+
+```sh
 go build ./...
 ```
 
@@ -37,7 +51,7 @@ curl-style response summary.
 ### Request Example
 
 ```sh
-go run ./cmd/mh2c \
+./bin/mh2c \
   --url https://nghttp2.org/httpbin/headers \
   --header 'user-agent:mh2c-go'
 ```
@@ -45,7 +59,7 @@ go run ./cmd/mh2c \
 ### POST Example
 
 ```sh
-go run ./cmd/mh2c \
+./bin/mh2c \
   --url https://nghttp2.org/httpbin/post \
   --method POST \
   --header 'content-type: application/json' \
@@ -55,10 +69,23 @@ go run ./cmd/mh2c \
 ### Ping Example
 
 ```sh
-go run ./cmd/mh2c \
+./bin/mh2c \
   --host nghttp2.org \
   --mode ping \
   --ping-data mh2cping
+```
+
+### Observe Example
+
+```sh
+./bin/mh2c \
+  --host nghttp2.org \
+  --mode observe \
+  --frame-filter headers \
+  --frame-filter data \
+  --stream-filter 1 \
+  --save-body ./body.bin \
+  --save-headers ./headers.txt
 ```
 
 ### Script Example
@@ -108,15 +135,29 @@ ack_ping = true
 ```
 
 ```sh
-go run ./cmd/mh2c --mode script --script-file ./request.toml
+./bin/mh2c --mode script --script-file ./request.toml
 ```
 
 ### Notes
 
+- `make build-cli` creates `./bin/mh2c` for local use
+- `make install` runs `go install ./cmd/mh2c`
 - `--url` overrides `--scheme`, `--host`, `--port`, and `--path`
 - `--body-file path/to/file` reads the request body from a file
 - `--body-file -` reads the request body from stdin
 - `--authority` overrides the `:authority` pseudo-header
+- `--mode observe` performs the HTTP/2 handshake and continues printing received frames until `GOAWAY`, `--timeout`, or `--max-recv`
+- `--max-recv N` limits the number of received frames in observe mode; `0` means unlimited
+- `--stream-filter id` keeps stream-specific output focused on one stream while still showing connection-level frames
+- `--frame-filter name` is repeatable and accepts `settings`, `headers`, `continuation`, `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `push_promise`, `priority`, and `raw`
+- `--output jsonl` emits one JSON line per event instead of the default text output
+- `--data-format text|hex|both` controls how DATA, PING, and GOAWAY debug payloads are rendered
+- `--data-limit N` truncates displayed payload bytes; `0` means unlimited
+- `--decode-headers=false` disables HPACK header decoding in CLI output
+- `--show-header-block=false` hides HPACK/header block fragments from the output
+- `--save-output path` mirrors the displayed CLI output into a file
+- `--save-body path` stores the captured response body in request/observe mode
+- `--save-headers path` stores decoded response headers in request/observe mode
 - `--mode script --script-file file.toml` executes a scripted frame sequence
 - script mode does not auto-send connection preface or SETTINGS; include them explicitly when needed
 - supported script actions are `preface`, `sleep`, `settings`, `headers`, `continuation`,
@@ -127,6 +168,7 @@ go run ./cmd/mh2c --mode script --script-file ./request.toml
   strings, integers, booleans, string arrays, `[connection]`, and `[[action]]`
 - received frames are printed with payload details such as decoded headers,
   DATA text/hex, SETTINGS entries, and PING payloads
+- `go run ./cmd/mh2c ...` still works for ad-hoc execution without producing a local binary
 
 ## Package Layout
 

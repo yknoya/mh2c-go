@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/yknoya/mh2c-go/frame"
@@ -108,6 +109,45 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 	}
 	if !result.done || !bytes.Equal(result.data, []byte("hello")) {
 		t.Fatalf("Consume(DATA) = %#v, want done with hello", result)
+	}
+}
+
+func TestParseConfigObserveMode(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	cfg, err := parseConfig([]string{
+		"--mode", "observe",
+		"--output", "jsonl",
+		"--data-format", "hex",
+		"--stream-filter", "3",
+		"--frame-filter", "data",
+		"--max-recv", "10",
+	}, &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig() error = %v", err)
+	}
+	if cfg.mode != "observe" || cfg.outputFormat != outputFormatJSONL || cfg.dataFormat != dataFormatHex {
+		t.Fatalf("parseConfig() = %#v", cfg)
+	}
+	if !cfg.hasStreamFilter || cfg.streamFilter != 3 || cfg.maxRecv != 10 {
+		t.Fatalf("stream filter/max recv = %#v", cfg)
+	}
+	if len(cfg.frameFilters) != 1 || cfg.frameFilters[0] != "data" {
+		t.Fatalf("frameFilters = %#v", cfg.frameFilters)
+	}
+}
+
+func TestParseConfigRejectsSaveBodyOutsideRequestOrObserve(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	_, err := parseConfig([]string{
+		"--mode", "ping",
+		"--save-body", "body.bin",
+	}, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "save-body and save-headers are only supported") {
+		t.Fatalf("parseConfig() error = %v, want save-body validation", err)
 	}
 }
 

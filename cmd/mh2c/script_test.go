@@ -180,6 +180,16 @@ func TestExecuteScriptSleepOutputsProgress(t *testing.T) {
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
 	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "script",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
 
 	sawGoAway, err := executeScript(h2c, scriptFile{
 		actions: []scriptTable{
@@ -188,7 +198,7 @@ func TestExecuteScriptSleepOutputsProgress(t *testing.T) {
 				"duration_ms": {kind: scriptNumber, number: 1},
 			},
 		},
-	}, &out)
+	}, controller)
 	if err != nil {
 		t.Fatalf("executeScript() error = %v", err)
 	}

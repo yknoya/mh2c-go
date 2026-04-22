@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/yknoya/mh2c-go/client"
 	"github.com/yknoya/mh2c-go/frame"
@@ -21,36 +19,72 @@ import (
 
 const defaultMaxDynamicTableSize uint = 8192
 
-type headerFlags []string
+type stringFlags []string
 
-func (h *headerFlags) String() string {
-	return strings.Join(*h, ",")
+func (s *stringFlags) String() string {
+	return strings.Join(*s, ",")
 }
 
-func (h *headerFlags) Set(v string) error {
-	*h = append(*h, v)
+func (s *stringFlags) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+type headerFlags = stringFlags
+
+type optionalUintFlag struct {
+	value uint
+	set   bool
+}
+
+func (f *optionalUintFlag) String() string {
+	if !f.set {
+		return ""
+	}
+	return strconv.FormatUint(uint64(f.value), 10)
+}
+
+func (f *optionalUintFlag) Set(src string) error {
+	value, err := strconv.ParseUint(src, 10, strconv.IntSize)
+	if err != nil {
+		return err
+	}
+	f.value = uint(value)
+	f.set = true
 	return nil
 }
 
 type config struct {
-	mode       string
-	scriptFile string
-	rawURL     string
-	scheme     string
-	host       string
-	authority  string
-	path       string
-	method     string
-	data       string
-	bodyFile   string
-	pingData   string
-	timeout    time.Duration
-	maxTable   uint
-	port       uint
-	streamID   uint
-	insecure   bool
-	sendGoAway bool
-	headers    headerFlags
+	mode            string
+	scriptFile      string
+	rawURL          string
+	scheme          string
+	host            string
+	authority       string
+	path            string
+	method          string
+	data            string
+	bodyFile        string
+	pingData        string
+	timeout         time.Duration
+	maxTable        uint
+	port            uint
+	streamID        uint
+	maxRecv         uint
+	streamFilter    uint
+	hasStreamFilter bool
+	insecure        bool
+	sendGoAway      bool
+	outputFormat    string
+	dataFormat      string
+	dataLimit       uint
+	decodeHeaders   bool
+	showHeaderBlock bool
+	saveOutput      string
+	saveBody        string
+	saveHeaders     string
+	headers         headerFlags
+	frameFilters    stringFlags
 }
 
 type endpoint struct {
@@ -105,6 +139,15 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	if err != nil {
 		return err
 	}
+	out, closeOutput, err := prepareOutputWriter(stdout, cfg.saveOutput)
+	if err != nil {
+		return err
+	}
+	defer closeOutput()
+	controller, err := newOutputController(out, cfg)
+	if err != nil {
+		return err
+	}
 
 	ctx := parent
 	if cfg.timeout > 0 {
@@ -128,7 +171,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	sawGoAway := false
 	switch cfg.mode {
 	case "request":
-		if err := startSession(h2c, uint32(cfg.maxTable), stdout); err != nil {
+		if err := startSession(h2c, uint32(cfg.maxTable), controller); err != nil {
 			return err
 		}
 		body, err := readRequestBody(cfg, stdin)
@@ -142,28 +185,39 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		if err := sendRequest(h2c, streamID, fields, body); err != nil {
 			return err
 		}
-		sawGoAway, err = receiveResponseFrames(h2c, streamID, stdout)
+		sawGoAway, err = receiveResponseFrames(h2c, streamID, controller)
 		if err != nil {
 			return err
 		}
 	case "ping":
-		if err := startSession(h2c, uint32(cfg.maxTable), stdout); err != nil {
+		if err := startSession(h2c, uint32(cfg.maxTable), controller); err != nil {
 			return err
 		}
 		payload, err := parsePingData(cfg.pingData)
 		if err != nil {
 			return err
 		}
-		if err := h2c.SendFrame(frame.PingFrame{Data: payload}); err != nil {
+		pingFrame := frame.PingFrame{Data: payload}
+		if err := h2c.SendFrame(pingFrame); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "sent PING payload=%q hex=%s\n", string(payload[:]), hex.EncodeToString(payload[:]))
-		sawGoAway, err = receivePingFrames(h2c, payload, stdout)
+		if err := controller.HandleSent(pingFrame); err != nil {
+			return err
+		}
+		sawGoAway, err = receivePingFrames(h2c, payload, controller)
+		if err != nil {
+			return err
+		}
+	case "observe":
+		if err := startSession(h2c, uint32(cfg.maxTable), controller); err != nil {
+			return err
+		}
+		sawGoAway, err = receiveObserveFrames(h2c, cfg.maxRecv, controller)
 		if err != nil {
 			return err
 		}
 	case "script":
-		sawGoAway, err = executeScript(h2c, script, stdout)
+		sawGoAway, err = executeScript(h2c, script, controller)
 		if err != nil {
 			return err
 		}
@@ -177,28 +231,34 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 			ErrorCode:    frame.ErrNo,
 		})
 	}
-	return nil
+	return controller.Flush()
 }
 
 func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs := flag.NewFlagSet("mh2c", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
+	var streamFilter optionalUintFlag
+
 	cfg := config{
-		mode:       "request",
-		scheme:     "https",
-		host:       "nghttp2.org",
-		path:       "/httpbin/headers",
-		method:     "GET",
-		pingData:   "mh2cping",
-		timeout:    10 * time.Second,
-		maxTable:   defaultMaxDynamicTableSize,
-		port:       443,
-		streamID:   1,
-		sendGoAway: true,
+		mode:            "request",
+		scheme:          "https",
+		host:            "nghttp2.org",
+		path:            "/httpbin/headers",
+		method:          "GET",
+		pingData:        "mh2cping",
+		timeout:         10 * time.Second,
+		maxTable:        defaultMaxDynamicTableSize,
+		port:            443,
+		streamID:        1,
+		sendGoAway:      true,
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
 	}
 
-	fs.StringVar(&cfg.mode, "mode", cfg.mode, "operation mode: request, ping, or script")
+	fs.StringVar(&cfg.mode, "mode", cfg.mode, "operation mode: request, ping, script, or observe")
 	fs.StringVar(&cfg.scriptFile, "script-file", "", "script file path for mode=script")
 	fs.StringVar(&cfg.rawURL, "url", "", "target URL; when set, overrides scheme/host/port/path")
 	fs.StringVar(&cfg.scheme, "scheme", cfg.scheme, "target scheme; only https is supported")
@@ -213,15 +273,28 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	fs.DurationVar(&cfg.timeout, "timeout", cfg.timeout, "overall timeout")
 	fs.UintVar(&cfg.maxTable, "max-table-size", cfg.maxTable, "initial HPACK dynamic table size")
 	fs.UintVar(&cfg.streamID, "stream-id", cfg.streamID, "request stream ID")
+	fs.UintVar(&cfg.maxRecv, "max-recv", 0, "maximum received frames in observe mode; 0 means unlimited")
+	fs.Var(&streamFilter, "stream-filter", "display and capture a specific stream ID")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification")
 	fs.BoolVar(&cfg.sendGoAway, "send-goaway", cfg.sendGoAway, "send GOAWAY before exit when peer did not")
+	fs.StringVar(&cfg.outputFormat, "output", cfg.outputFormat, "output format: text or jsonl")
+	fs.StringVar(&cfg.dataFormat, "data-format", cfg.dataFormat, "payload format: text, hex, or both")
+	fs.UintVar(&cfg.dataLimit, "data-limit", 0, "truncate payload display to the first N bytes; 0 means unlimited")
+	fs.BoolVar(&cfg.decodeHeaders, "decode-headers", cfg.decodeHeaders, "decode received HPACK header blocks")
+	fs.BoolVar(&cfg.showHeaderBlock, "show-header-block", cfg.showHeaderBlock, "show HPACK/header block fragments")
+	fs.StringVar(&cfg.saveOutput, "save-output", "", "write the displayed CLI output to a file as well")
+	fs.StringVar(&cfg.saveBody, "save-body", "", "save the captured response body to a file")
+	fs.StringVar(&cfg.saveHeaders, "save-headers", "", "save the decoded response headers to a file")
 	fs.Var(&cfg.headers, "header", "request header in 'name:value' format; repeatable")
+	fs.Var(&cfg.frameFilters, "frame-filter", "only display specific frame types; repeatable")
 
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
-	if cfg.mode != "request" && cfg.mode != "ping" && cfg.mode != "script" {
-		return config{}, fmt.Errorf("invalid mode %q: want request, ping, or script", cfg.mode)
+	cfg.streamFilter = streamFilter.value
+	cfg.hasStreamFilter = streamFilter.set
+	if cfg.mode != "request" && cfg.mode != "ping" && cfg.mode != "script" && cfg.mode != "observe" {
+		return config{}, fmt.Errorf("invalid mode %q: want request, ping, script, or observe", cfg.mode)
 	}
 	if cfg.streamID == 0 {
 		return config{}, fmt.Errorf("stream-id must be greater than 0")
@@ -232,7 +305,30 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	if cfg.port > 65535 {
 		return config{}, fmt.Errorf("port %d is out of range", cfg.port)
 	}
+	if cfg.outputFormat != outputFormatText && cfg.outputFormat != outputFormatJSONL {
+		return config{}, fmt.Errorf("invalid output %q: want text or jsonl", cfg.outputFormat)
+	}
+	if cfg.dataFormat != dataFormatText && cfg.dataFormat != dataFormatHex && cfg.dataFormat != dataFormatBoth {
+		return config{}, fmt.Errorf("invalid data-format %q: want text, hex, or both", cfg.dataFormat)
+	}
+	if _, err := buildFrameFilterSet(cfg.frameFilters); err != nil {
+		return config{}, err
+	}
+	if (cfg.saveBody != "" || cfg.saveHeaders != "") && cfg.mode != "request" && cfg.mode != "observe" {
+		return config{}, fmt.Errorf("save-body and save-headers are only supported in request or observe mode")
+	}
 	return cfg, nil
+}
+
+func prepareOutputWriter(stdout io.Writer, savePath string) (io.Writer, func() error, error) {
+	if savePath == "" {
+		return stdout, func() error { return nil }, nil
+	}
+	file, err := os.Create(savePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return io.MultiWriter(stdout, file), file.Close, nil
 }
 
 func resolveEndpoint(cfg config) (endpoint, error) {
@@ -300,7 +396,7 @@ func resolveEndpoint(cfg config) (endpoint, error) {
 	}, nil
 }
 
-func startSession(h2c *client.Client, maxTable uint32, out io.Writer) error {
+func startSession(h2c *client.Client, maxTable uint32, out *outputController) error {
 	if err := h2c.SendConnectionPreface(); err != nil {
 		return err
 	}
@@ -320,17 +416,27 @@ func startSession(h2c *client.Client, maxTable uint32, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		printReceivedFrame(out, h2c, f)
+		if err := out.HandleReceived(h2c, f); err != nil {
+			return err
+		}
 
 		switch typed := f.(type) {
 		case frame.SettingsFrame:
 			if typed.Flags&frame.FlagSettingsAck != 0 {
 				continue
 			}
-			return h2c.SendFrame(frame.SettingsFrame{Flags: frame.FlagSettingsAck})
+			ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+			if err := h2c.SendFrame(ack); err != nil {
+				return err
+			}
+			return out.HandleSent(ack)
 		case frame.PingFrame:
 			if typed.Flags&frame.FlagPingAck == 0 {
-				if err := h2c.SendFrame(frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}); err != nil {
+				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+				if err := h2c.SendFrame(ack); err != nil {
+					return err
+				}
+				if err := out.HandleSent(ack); err != nil {
 					return err
 				}
 			}
@@ -434,7 +540,7 @@ func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField
 	})
 }
 
-func receiveResponseFrames(h2c *client.Client, streamID uint32, out io.Writer) (bool, error) {
+func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputController) (bool, error) {
 	state := responseState{streamID: streamID}
 	sawGoAway := false
 
@@ -443,18 +549,28 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out io.Writer) (
 		if err != nil {
 			return sawGoAway, err
 		}
-		printReceivedFrame(out, h2c, f)
+		if err := out.HandleReceived(h2c, f); err != nil {
+			return sawGoAway, err
+		}
 
 		switch typed := f.(type) {
 		case frame.SettingsFrame:
 			if typed.Flags&frame.FlagSettingsAck == 0 {
-				if err := h2c.SendFrame(frame.SettingsFrame{Flags: frame.FlagSettingsAck}); err != nil {
+				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
 					return sawGoAway, err
 				}
 			}
 		case frame.PingFrame:
 			if typed.Flags&frame.FlagPingAck == 0 {
-				if err := h2c.SendFrame(frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}); err != nil {
+				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -467,43 +583,92 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out io.Writer) (
 		if err != nil {
 			return sawGoAway, err
 		}
-		if len(result.warnings) > 0 {
-			printHeaderWarnings(out, result.warnings)
-		}
-		if len(result.headers) > 0 {
-			printHeaderFields(out, result.headers)
-		}
 		if result.done {
 			return sawGoAway, nil
 		}
 	}
 }
 
-func receivePingFrames(h2c *client.Client, want [8]byte, out io.Writer) (bool, error) {
+func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) (bool, error) {
 	sawGoAway := false
 	for {
 		f, err := h2c.ReceiveFrame()
 		if err != nil {
 			return sawGoAway, err
 		}
-		printReceivedFrame(out, h2c, f)
+		if err := out.HandleReceived(h2c, f); err != nil {
+			return sawGoAway, err
+		}
 
 		switch typed := f.(type) {
 		case frame.SettingsFrame:
 			if typed.Flags&frame.FlagSettingsAck == 0 {
-				if err := h2c.SendFrame(frame.SettingsFrame{Flags: frame.FlagSettingsAck}); err != nil {
+				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
 					return sawGoAway, err
 				}
 			}
 		case frame.PingFrame:
 			if typed.Flags&frame.FlagPingAck == 0 {
-				if err := h2c.SendFrame(frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}); err != nil {
+				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
 					return sawGoAway, err
 				}
 				continue
 			}
 			if typed.Data == want {
 				return sawGoAway, nil
+			}
+		case frame.GoAwayFrame:
+			sawGoAway = true
+			return sawGoAway, nil
+		}
+	}
+}
+
+func receiveObserveFrames(h2c *client.Client, maxRecv uint, out *outputController) (bool, error) {
+	sawGoAway := false
+	var received uint
+
+	for {
+		if maxRecv > 0 && received >= maxRecv {
+			return sawGoAway, nil
+		}
+		f, err := h2c.ReceiveFrame()
+		if err != nil {
+			return sawGoAway, err
+		}
+		received++
+		if err := out.HandleReceived(h2c, f); err != nil {
+			return sawGoAway, err
+		}
+
+		switch typed := f.(type) {
+		case frame.SettingsFrame:
+			if typed.Flags&frame.FlagSettingsAck == 0 {
+				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
+					return sawGoAway, err
+				}
+			}
+		case frame.PingFrame:
+			if typed.Flags&frame.FlagPingAck == 0 {
+				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+				if err := h2c.SendFrame(ack); err != nil {
+					return sawGoAway, err
+				}
+				if err := out.HandleSent(ack); err != nil {
+					return sawGoAway, err
+				}
 			}
 		case frame.GoAwayFrame:
 			sawGoAway = true
@@ -575,82 +740,6 @@ func parsePingData(src string) ([8]byte, error) {
 	}
 	copy(payload[:], src)
 	return payload, nil
-}
-
-func printReceivedFrame(out io.Writer, c *client.Client, f frame.Frame) {
-	fmt.Fprintf(out, "<< %s\n", client.DebugFrameString(f))
-
-	switch typed := f.(type) {
-	case frame.SettingsFrame:
-		if len(typed.Settings) == 0 {
-			fmt.Fprintln(out, "  settings: <empty>")
-			return
-		}
-		for _, setting := range typed.Settings {
-			fmt.Fprintf(out, "  setting id=%s value=%d\n", settingName(setting.ID), setting.Value)
-		}
-	case frame.HeadersFrame:
-		fmt.Fprintf(out, "  header-block-fragment: %s\n", hex.EncodeToString(typed.BlockFragment))
-	case frame.ContinuationFrame:
-		fmt.Fprintf(out, "  continuation-fragment: %s\n", hex.EncodeToString(typed.BlockFragment))
-	case frame.PushPromiseFrame:
-		fmt.Fprintf(out, "  promised-stream-id: %d\n", typed.PromisedStreamID)
-		fmt.Fprintf(out, "  header-block-fragment: %s\n", hex.EncodeToString(typed.BlockFragment))
-		if typed.Flags&frame.FlagPushPromiseEndHeaders != 0 {
-			printDecodedHeaders(out, c, typed.BlockFragment)
-		}
-	case frame.DataFrame:
-		fmt.Fprintf(out, "  data-length: %d\n", len(typed.Data))
-		fmt.Fprintf(out, "  data-hex: %s\n", hex.EncodeToString(typed.Data))
-		fmt.Fprintf(out, "  data-text: %s\n", formatDataText(typed.Data))
-	case frame.PingFrame:
-		fmt.Fprintf(out, "  ping-hex: %s\n", hex.EncodeToString(typed.Data[:]))
-		fmt.Fprintf(out, "  ping-text: %s\n", formatDataText(typed.Data[:]))
-	case frame.GoAwayFrame:
-		if len(typed.DebugData) == 0 {
-			fmt.Fprintln(out, "  debug-data: <empty>")
-			return
-		}
-		fmt.Fprintf(out, "  debug-data-hex: %s\n", hex.EncodeToString(typed.DebugData))
-		fmt.Fprintf(out, "  debug-data-text: %s\n", formatDataText(typed.DebugData))
-	case frame.RawFrame:
-		payload := typed.Payload()
-		fmt.Fprintf(out, "  raw-payload-hex: %s\n", hex.EncodeToString(payload))
-	default:
-		fmt.Fprintf(out, "  payload-hex: %s\n", hex.EncodeToString(f.Payload()))
-	}
-}
-
-func printDecodedHeaders(out io.Writer, c *client.Client, block []byte) {
-	report, err := c.DecodeHeadersDetailed(block)
-	if err != nil {
-		fmt.Fprintf(out, "  header-decode-error: %v\n", err)
-		return
-	}
-	printHeaderWarnings(out, report.Warnings)
-	printHeaderFields(out, report.Fields)
-}
-
-func printHeaderWarnings(out io.Writer, warnings []string) {
-	for _, warning := range warnings {
-		fmt.Fprintf(out, "  header-warning: %s\n", warning)
-	}
-}
-
-func printHeaderFields(out io.Writer, fields []hpack.HeaderField) {
-	for _, field := range fields {
-		fmt.Fprintf(out, "  header %s: %s\n", field.Name, field.Value)
-	}
-}
-
-func formatDataText(data []byte) string {
-	if len(data) == 0 {
-		return "<empty>"
-	}
-	if utf8.Valid(data) {
-		return strconv.Quote(string(data))
-	}
-	return "<non-utf8>"
 }
 
 func settingName(id frame.SettingID) string {

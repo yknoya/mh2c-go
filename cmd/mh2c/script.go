@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -172,7 +171,7 @@ func applyScriptConnection(cfg config, script scriptFile) (config, error) {
 	return cfg, nil
 }
 
-func executeScript(h2c *client.Client, script scriptFile, out io.Writer) (bool, error) {
+func executeScript(h2c *client.Client, script scriptFile, out *outputController) (bool, error) {
 	sawGoAway := false
 
 	for index, action := range script.actions {
@@ -186,13 +185,17 @@ func executeScript(h2c *client.Client, script scriptFile, out io.Writer) (bool, 
 			if err := h2c.SendConnectionPreface(); err != nil {
 				return sawGoAway, err
 			}
-			fmt.Fprintln(out, ">> CONNECTION_PREFACE")
+			if err := out.PrintNotice("sent", "preface", "CONNECTION_PREFACE"); err != nil {
+				return sawGoAway, err
+			}
 		case "sleep":
 			duration, err := parseSleepDuration(action)
 			if err != nil {
 				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
 			}
-			fmt.Fprintf(out, ">> SLEEP %s\n", duration)
+			if err := out.PrintNotice("sent", "sleep", fmt.Sprintf("SLEEP %s", duration)); err != nil {
+				return sawGoAway, err
+			}
 			time.Sleep(duration)
 		case "receive":
 			gotGoAway, err := executeReceiveAction(h2c, action, out)
@@ -209,7 +212,9 @@ func executeScript(h2c *client.Client, script scriptFile, out io.Writer) (bool, 
 				return sawGoAway, err
 			}
 			applySentFrame(h2c, sent)
-			printSentFrame(out, sent)
+			if err := out.HandleSent(sent); err != nil {
+				return sawGoAway, err
+			}
 		}
 	}
 
@@ -442,7 +447,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 	}
 }
 
-func executeReceiveAction(h2c *client.Client, action scriptTable, out io.Writer) (bool, error) {
+func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputController) (bool, error) {
 	if _, ok := action["count"]; ok {
 		if _, ok := action["until"]; ok {
 			return false, fmt.Errorf("count and until cannot be used together")
@@ -492,16 +497,13 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out io.Writer)
 			return sawGoAway, err
 		}
 		receivedCount++
-		printReceivedFrame(out, h2c, received)
-
-		if headers, warnings, stream, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, received, h2c.DecodeHeadersDetailed); err != nil {
+		if err := out.HandleReceived(h2c, received); err != nil {
 			return sawGoAway, err
-		} else if len(headers) > 0 {
-			printHeaderWarnings(out, warnings)
-			printHeaderFields(out, headers)
-			if until == "end_stream" && hasStreamID && stream == streamID && endStream {
-				return sawGoAway, nil
-			}
+		}
+		if headers, _, stream, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, received, h2c.DecodeHeadersDetailed); err != nil {
+			return sawGoAway, err
+		} else if len(headers) > 0 && until == "end_stream" && hasStreamID && stream == streamID && endStream {
+			return sawGoAway, nil
 		}
 
 		switch typed := received.(type) {
@@ -511,7 +513,9 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out io.Writer)
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				printSentFrame(out, ack)
+				if err := out.HandleSent(ack); err != nil {
+					return sawGoAway, err
+				}
 			}
 			if until == "settings" && typed.Flags&frame.FlagSettingsAck == 0 {
 				return sawGoAway, nil
@@ -525,7 +529,9 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out io.Writer)
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
-				printSentFrame(out, ack)
+				if err := out.HandleSent(ack); err != nil {
+					return sawGoAway, err
+				}
 			}
 			if until == "ping_ack" && typed.Flags&frame.FlagPingAck != 0 {
 				return sawGoAway, nil
@@ -596,36 +602,6 @@ func applySentFrame(h2c *client.Client, sent frame.Frame) {
 				h2c.RequestCodec().SetMaxDynamicTableSize(setting.Value)
 			}
 		}
-	}
-}
-
-func printSentFrame(out io.Writer, f frame.Frame) {
-	fmt.Fprintf(out, ">> %s\n", client.DebugFrameString(f))
-	switch typed := f.(type) {
-	case frame.SettingsFrame:
-		if len(typed.Settings) == 0 {
-			fmt.Fprintln(out, "  settings: <empty>")
-			return
-		}
-		for _, setting := range typed.Settings {
-			fmt.Fprintf(out, "  setting id=%s value=%d\n", settingName(setting.ID), setting.Value)
-		}
-	case frame.DataFrame:
-		fmt.Fprintf(out, "  data-length: %d\n", len(typed.Data))
-		fmt.Fprintf(out, "  data-hex: %s\n", hex.EncodeToString(typed.Data))
-		fmt.Fprintf(out, "  data-text: %s\n", formatDataText(typed.Data))
-	case frame.PingFrame:
-		fmt.Fprintf(out, "  ping-hex: %s\n", hex.EncodeToString(typed.Data[:]))
-		fmt.Fprintf(out, "  ping-text: %s\n", formatDataText(typed.Data[:]))
-	case frame.GoAwayFrame:
-		if len(typed.DebugData) == 0 {
-			fmt.Fprintln(out, "  debug-data: <empty>")
-			return
-		}
-		fmt.Fprintf(out, "  debug-data-hex: %s\n", hex.EncodeToString(typed.DebugData))
-		fmt.Fprintf(out, "  debug-data-text: %s\n", formatDataText(typed.DebugData))
-	default:
-		fmt.Fprintf(out, "  payload-hex: %s\n", hex.EncodeToString(f.Payload()))
 	}
 }
 
