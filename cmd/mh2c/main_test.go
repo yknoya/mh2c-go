@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/yknoya/mh2c-go/client"
 	"github.com/yknoya/mh2c-go/frame"
 	"github.com/yknoya/mh2c-go/hpack"
 )
@@ -151,6 +153,89 @@ func TestParseConfigRejectsSaveBodyOutsideRequestOrObserve(t *testing.T) {
 	}
 }
 
+func TestStartSessionDisplaysSentPrefaceAndSettings(t *testing.T) {
+	t.Parallel()
+
+	serverSettings, err := frame.SettingsFrame{
+		Settings: []frame.Setting{
+			{ID: frame.SettingMaxConcurrentStreams, Value: 100},
+		},
+	}.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary() error = %v", err)
+	}
+
+	conn := &scriptedConn{reader: bytes.NewReader(serverSettings)}
+	h2c := client.NewWithConn(conn, client.WithMaxDynamicTableSize(4096))
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "request",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	if err := startSession(h2c, 8192, controller); err != nil {
+		t.Fatalf("startSession() error = %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, ">> CONNECTION_PREFACE") {
+		t.Fatalf("output = %q, want sent preface", text)
+	}
+	if !strings.Contains(text, ">> SETTINGS flags=0x00 entries=3") {
+		t.Fatalf("output = %q, want sent initial SETTINGS", text)
+	}
+	if !strings.Contains(text, ">> SETTINGS flags=0x01 entries=0") {
+		t.Fatalf("output = %q, want sent SETTINGS ack", text)
+	}
+}
+
+func TestSendRequestDisplaysSentHeadersAndData(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "request",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	fields := []hpack.HeaderField{
+		{Name: ":method", Value: "POST"},
+		{Name: ":path", Value: "/demo"},
+		{Name: ":scheme", Value: "https"},
+		{Name: ":authority", Value: "example.com"},
+		{Name: "content-length", Value: "5"},
+	}
+
+	if err := sendRequest(h2c, 1, fields, []byte("hello"), controller); err != nil {
+		t.Fatalf("sendRequest() error = %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, ">> HEADERS stream=1") {
+		t.Fatalf("output = %q, want sent HEADERS", text)
+	}
+	if !strings.Contains(text, ">> DATA stream=1 flags=0x01 len=5") {
+		t.Fatalf("output = %q, want sent DATA", text)
+	}
+	if !strings.Contains(text, "data-text: \"hello\"") {
+		t.Fatalf("output = %q, want displayed DATA payload", text)
+	}
+}
+
 func fieldValue(fields []hpack.HeaderField, name string) string {
 	for _, field := range fields {
 		if field.Name == name {
@@ -158,4 +243,24 @@ func fieldValue(fields []hpack.HeaderField, name string) string {
 		}
 	}
 	return ""
+}
+
+type scriptedConn struct {
+	reader *bytes.Reader
+	writes bytes.Buffer
+}
+
+func (c *scriptedConn) Read(p []byte) (int, error) {
+	if c.reader == nil {
+		return 0, io.EOF
+	}
+	return c.reader.Read(p)
+}
+
+func (c *scriptedConn) Write(p []byte) (int, error) {
+	return c.writes.Write(p)
+}
+
+func (*scriptedConn) Close() error {
+	return nil
 }

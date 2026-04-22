@@ -182,7 +182,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		if err != nil {
 			return err
 		}
-		if err := sendRequest(h2c, streamID, fields, body); err != nil {
+		if err := sendRequest(h2c, streamID, fields, body, controller); err != nil {
 			return err
 		}
 		sawGoAway, err = receiveResponseFrames(h2c, streamID, controller)
@@ -198,10 +198,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 			return err
 		}
 		pingFrame := frame.PingFrame{Data: payload}
-		if err := h2c.SendFrame(pingFrame); err != nil {
-			return err
-		}
-		if err := controller.HandleSent(pingFrame); err != nil {
+		if err := sendFrameAndReport(h2c, controller, pingFrame); err != nil {
 			return err
 		}
 		sawGoAway, err = receivePingFrames(h2c, payload, controller)
@@ -226,10 +223,13 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 
 	if cfg.sendGoAway && !sawGoAway {
-		_ = h2c.SendFrame(frame.GoAwayFrame{
+		goAway := frame.GoAwayFrame{
 			LastStreamID: streamID,
 			ErrorCode:    frame.ErrNo,
-		})
+		}
+		if err := h2c.SendFrame(goAway); err == nil {
+			_ = controller.HandleSent(goAway)
+		}
 	}
 	return controller.Flush()
 }
@@ -400,13 +400,17 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 	if err := h2c.SendConnectionPreface(); err != nil {
 		return err
 	}
-	if err := h2c.SendFrame(frame.SettingsFrame{
+	if err := out.PrintNotice("sent", "preface", "CONNECTION_PREFACE"); err != nil {
+		return err
+	}
+	settings := frame.SettingsFrame{
 		Settings: []frame.Setting{
 			{ID: frame.SettingEnablePush, Value: 0},
 			{ID: frame.SettingInitialWindowSize, Value: 65535},
 			{ID: frame.SettingHeaderTableSize, Value: maxTable},
 		},
-	}); err != nil {
+	}
+	if err := sendFrameAndReport(h2c, out, settings); err != nil {
 		return err
 	}
 
@@ -425,17 +429,11 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 				continue
 			}
 			ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
-			if err := h2c.SendFrame(ack); err != nil {
-				return err
-			}
-			return out.HandleSent(ack)
+			return sendFrameAndReport(h2c, out, ack)
 		case frame.PingFrame:
 			if typed.Flags&frame.FlagPingAck == 0 {
 				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
-				if err := h2c.SendFrame(ack); err != nil {
-					return err
-				}
-				if err := out.HandleSent(ack); err != nil {
+				if err := sendFrameAndReport(h2c, out, ack); err != nil {
 					return err
 				}
 			}
@@ -512,7 +510,7 @@ func parseHeader(raw string) (hpack.HeaderField, error) {
 	return hpack.HeaderField{Name: name, Value: value}, nil
 }
 
-func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField, body []byte) error {
+func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField, body []byte, out *outputController) error {
 	block, err := h2c.EncodeHeaders(fields)
 	if err != nil {
 		return err
@@ -522,21 +520,29 @@ func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField
 	if len(body) == 0 {
 		flags |= frame.FlagHeadersEndStream
 	}
-	if err := h2c.SendFrame(frame.HeadersFrame{
+	headers := frame.HeadersFrame{
 		StreamID:      streamID,
 		Flags:         flags,
 		BlockFragment: block,
-	}); err != nil {
+	}
+	if err := sendFrameAndReport(h2c, out, headers); err != nil {
 		return err
 	}
 	if len(body) == 0 {
 		return nil
 	}
-	return h2c.SendFrame(frame.DataFrame{
+	return sendFrameAndReport(h2c, out, frame.DataFrame{
 		StreamID: streamID,
 		Flags:    frame.FlagDataEndStream,
 		Data:     body,
 	})
+}
+
+func sendFrameAndReport(h2c *client.Client, out *outputController, f frame.Frame) error {
+	if err := h2c.SendFrame(f); err != nil {
+		return err
+	}
+	return out.HandleSent(f)
 }
 
 func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputController) (bool, error) {
