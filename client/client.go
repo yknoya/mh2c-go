@@ -84,8 +84,8 @@ func NewWithConn(conn rwc, opts ...Option) *Client {
 	}
 	return &Client{
 		conn:          conn,
-		requestCodec:  hpack.NewCodec(cfg.maxTable),
-		responseCodec: hpack.NewCodec(cfg.maxTable),
+		requestCodec:  hpack.NewRequestCodec(),
+		responseCodec: hpack.NewResponseCodec(cfg.maxTable),
 	}
 }
 
@@ -190,7 +190,7 @@ func (c *Client) applyFrame(f frame.Frame) {
 	case frame.SettingsFrame:
 		for _, setting := range typed.Settings {
 			if setting.ID == frame.SettingHeaderTableSize {
-				c.responseCodec.SetMaxDynamicTableSize(setting.Value)
+				c.requestCodec.SetEncoderMaxDynamicTableSize(setting.Value)
 			}
 		}
 	}

@@ -599,7 +599,7 @@ func applySentFrame(h2c *client.Client, sent frame.Frame) {
 	case frame.SettingsFrame:
 		for _, setting := range typed.Settings {
 			if setting.ID == frame.SettingHeaderTableSize {
-				h2c.RequestCodec().SetMaxDynamicTableSize(setting.Value)
+				h2c.ResponseCodec().SetDecoderAllowedMaxDynamicTableSize(setting.Value)
 			}
 		}
 	}

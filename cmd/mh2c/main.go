@@ -409,7 +409,6 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 	}); err != nil {
 		return err
 	}
-	h2c.RequestCodec().SetMaxDynamicTableSize(maxTable)
 
 	for {
 		f, err := h2c.ReceiveFrame()

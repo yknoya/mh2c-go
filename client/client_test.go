@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/yknoya/mh2c-go/frame"
+	"github.com/yknoya/mh2c-go/hpack"
 )
 
 func TestSendConnectionPreface(t *testing.T) {
@@ -91,3 +92,71 @@ func TestSendRawFrame(t *testing.T) {
 		t.Fatalf("payload = %x, want %x", got[9:], payload)
 	}
 }
+
+func TestRequestCodecStartsAtPeerDefaultHeaderTableSize(t *testing.T) {
+	t.Parallel()
+
+	c := NewWithConn(testNopConn{}, WithMaxDynamicTableSize(8192))
+	fields := []hpack.HeaderField{
+		{Name: ":method", Value: "GET"},
+		{Name: ":path", Value: "/"},
+		{Name: "x-test", Value: "one"},
+	}
+
+	got, err := c.EncodeHeaders(fields)
+	if err != nil {
+		t.Fatalf("EncodeHeaders() error = %v", err)
+	}
+
+	wantCodec := hpack.NewCodec(4096)
+	want, err := wantCodec.Encode(fields)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("initial request header block = %x, want %x", got, want)
+	}
+}
+
+func TestReceiveSettingsUpdatesRequestCodecHeaderTableSize(t *testing.T) {
+	t.Parallel()
+
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+
+	c := NewWithConn(left, WithMaxDynamicTableSize(8192))
+	fields := []hpack.HeaderField{{Name: "x-test", Value: "one"}}
+
+	go func() {
+		raw, _ := frame.SettingsFrame{
+			Settings: []frame.Setting{{ID: frame.SettingHeaderTableSize, Value: 8192}},
+		}.MarshalBinary()
+		_, _ = right.Write(raw)
+	}()
+
+	if _, err := c.ReceiveFrame(); err != nil {
+		t.Fatalf("ReceiveFrame() error = %v", err)
+	}
+
+	got, err := c.EncodeHeaders(fields)
+	if err != nil {
+		t.Fatalf("EncodeHeaders() error = %v", err)
+	}
+
+	wantCodec := hpack.NewCodec(4096)
+	wantCodec.SetEncoderMaxDynamicTableSize(8192)
+	want, err := wantCodec.Encode(fields)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("request header block after peer SETTINGS = %x, want %x", got, want)
+	}
+}
+
+type testNopConn struct{}
+
+func (testNopConn) Read([]byte) (int, error)    { return 0, io.EOF }
+func (testNopConn) Write(p []byte) (int, error) { return len(p), nil }
+func (testNopConn) Close() error                { return nil }

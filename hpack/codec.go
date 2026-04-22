@@ -12,15 +12,27 @@ type Codec struct {
 }
 
 func NewCodec(maxDynamicTableSize uint32) *Codec {
+	return newCodec(maxDynamicTableSize, maxDynamicTableSize, maxDynamicTableSize)
+}
+
+func NewRequestCodec() *Codec {
+	return newCodec(initialHeaderTableSize, initialHeaderTableSize, initialHeaderTableSize)
+}
+
+func NewResponseCodec(allowedMaxDynamicTableSize uint32) *Codec {
+	return newCodec(initialHeaderTableSize, initialHeaderTableSize, allowedMaxDynamicTableSize)
+}
+
+func newCodec(encoderMaxDynamicTableSize, decoderDynamicTableSize, decoderAllowedMaxDynamicTableSize uint32) *Codec {
 	buf := bytes.NewBuffer(nil)
 	enc := NewEncoder(buf)
-	enc.SetMaxDynamicTableSizeLimit(maxDynamicTableSize)
-	enc.SetMaxDynamicTableSize(maxDynamicTableSize)
-	dec := NewDecoder(maxDynamicTableSize, nil)
-	dec.SetAllowedMaxDynamicTableSize(maxDynamicTableSize)
-	dec.SetMaxDynamicTableSize(maxDynamicTableSize)
+	enc.SetMaxDynamicTableSizeLimit(encoderMaxDynamicTableSize)
+	enc.SetMaxDynamicTableSize(encoderMaxDynamicTableSize)
+	dec := NewDecoder(decoderDynamicTableSize, nil)
+	dec.SetAllowedMaxDynamicTableSize(decoderAllowedMaxDynamicTableSize)
+	dec.SetMaxDynamicTableSize(decoderDynamicTableSize)
 	return &Codec{
-		maxSize: maxDynamicTableSize,
+		maxSize: encoderMaxDynamicTableSize,
 		buf:     buf,
 		encoder: enc,
 		decoder: dec,
@@ -32,6 +44,20 @@ func (c *Codec) SetMaxDynamicTableSize(v uint32) {
 	c.encoder.SetMaxDynamicTableSizeLimit(v)
 	c.encoder.SetMaxDynamicTableSize(v)
 	c.decoder.SetAllowedMaxDynamicTableSize(v)
+	c.decoder.SetMaxDynamicTableSize(v)
+}
+
+func (c *Codec) SetEncoderMaxDynamicTableSize(v uint32) {
+	c.maxSize = v
+	c.encoder.SetMaxDynamicTableSizeLimit(v)
+	c.encoder.SetMaxDynamicTableSize(v)
+}
+
+func (c *Codec) SetDecoderAllowedMaxDynamicTableSize(v uint32) {
+	c.decoder.SetAllowedMaxDynamicTableSize(v)
+}
+
+func (c *Codec) SetDecoderMaxDynamicTableSize(v uint32) {
 	c.decoder.SetMaxDynamicTableSize(v)
 }
 
