@@ -19,10 +19,13 @@ Tests live next to the code as `*_test.go`.
 Use the `Makefile` for the common path, or run Go commands directly.
 
 - `make build`: build all packages with `go build ./...`
+- `make build-cli`: build the local CLI binary at `./bin/mh2c`
+- `make install`: install `mh2c` with `go install ./cmd/mh2c`
 - `make test`: run the full test suite with `go test ./...`
 - `make fmt`: format all Go packages with `go fmt ./...`
-- `go run ./cmd/mh2c --help`: inspect CLI options locally
-- `go run ./cmd/mh2c --mode script --script-file ./request.toml`: run a scripted frame sequence
+- `./bin/mh2c --help`: inspect CLI options locally after `make build-cli`
+- `./bin/mh2c --mode script --script-file ./request.toml`: run a scripted frame sequence
+- `go run ./cmd/mh2c ...`: use for ad-hoc execution when you do not want to produce a local binary
 
 Run `make fmt` and `make test` before opening a PR.
 
