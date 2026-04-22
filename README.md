@@ -159,6 +159,9 @@ ack_ping = true
 - `--save-body path` stores the captured response body in request/observe mode
 - `--save-headers path` stores decoded response headers in request/observe mode
 - `--mode script --script-file file.toml` executes a scripted frame sequence
+- the default request/script helpers aim to keep common HTTP/2 state in sync so normal debugging stays practical
+- this does not turn `mh2c-go` into a high-level client: frames are still explicit and visible in the CLI output
+- when you want to bypass helper-managed state and send unusual or intentionally invalid bytes, prefer `block_hex` or `raw`
 - script mode does not auto-send connection preface or SETTINGS; include them explicitly when needed
 - supported script actions are `preface`, `sleep`, `settings`, `headers`, `continuation`,
   `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `priority`,
