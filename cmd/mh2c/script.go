@@ -187,6 +187,13 @@ func executeScript(h2c *client.Client, script scriptFile, out io.Writer) (bool, 
 				return sawGoAway, err
 			}
 			fmt.Fprintln(out, ">> CONNECTION_PREFACE")
+		case "sleep":
+			duration, err := parseSleepDuration(action)
+			if err != nil {
+				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
+			}
+			fmt.Fprintf(out, ">> SLEEP %s\n", duration)
+			time.Sleep(duration)
 		case "receive":
 			gotGoAway, err := executeReceiveAction(h2c, action, out)
 			if err != nil {
@@ -207,6 +214,20 @@ func executeScript(h2c *client.Client, script scriptFile, out io.Writer) (bool, 
 	}
 
 	return sawGoAway, nil
+}
+
+func parseSleepDuration(action scriptTable) (time.Duration, error) {
+	durationMS, ok, err := action.intValue("duration_ms")
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, fmt.Errorf("duration_ms is required")
+	}
+	if durationMS <= 0 {
+		return 0, fmt.Errorf("duration_ms must be > 0")
+	}
+	return time.Duration(durationMS) * time.Millisecond, nil
 }
 
 func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, error) {

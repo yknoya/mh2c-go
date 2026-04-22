@@ -85,6 +85,10 @@ until = "settings"
 ack_settings = true
 
 [[action]]
+type = "sleep"
+duration_ms = 500
+
+[[action]]
 type = "headers"
 stream_id = 1
 flags = ["END_HEADERS", "END_STREAM"]
@@ -115,9 +119,10 @@ go run ./cmd/mh2c --mode script --script-file ./request.toml
 - `--authority` overrides the `:authority` pseudo-header
 - `--mode script --script-file file.toml` executes a scripted frame sequence
 - script mode does not auto-send connection preface or SETTINGS; include them explicitly when needed
-- supported script actions are `preface`, `settings`, `headers`, `continuation`,
+- supported script actions are `preface`, `sleep`, `settings`, `headers`, `continuation`,
   `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `priority`,
   `push_promise`, `raw`, and `receive`
+- `sleep` uses `duration_ms = <int>` and prints progress such as `>> SLEEP 500ms`
 - the script parser accepts the TOML subset used in the example above:
   strings, integers, booleans, string arrays, `[connection]`, and `[[action]]`
 - received frames are printed with payload details such as decoded headers,

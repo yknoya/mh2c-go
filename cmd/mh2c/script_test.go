@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"strings"
 	"testing"
@@ -42,6 +43,25 @@ ack_settings = true
 	}
 	if len(script.actions) != 3 {
 		t.Fatalf("len(actions) = %d, want 3", len(script.actions))
+	}
+}
+
+func TestParseScriptWithSleepAction(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "sleep"
+duration_ms = 250
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	if len(script.actions) != 1 {
+		t.Fatalf("len(actions) = %d, want 1", len(script.actions))
+	}
+	if got, ok, err := script.actions[0].intValue("duration_ms"); err != nil || !ok || got != 250 {
+		t.Fatalf("duration_ms = %d, ok = %t, err = %v", got, ok, err)
 	}
 }
 
@@ -134,6 +154,49 @@ func TestParseStringArray(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "a,b,c" {
 		t.Fatalf("parseStringArray() = %#v", got)
+	}
+}
+
+func TestParseSleepDurationRequiresDurationMS(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseSleepDuration(scriptTable{}); err == nil {
+		t.Fatal("parseSleepDuration() error = nil, want missing duration_ms error")
+	}
+}
+
+func TestParseSleepDurationRejectsNonPositiveValue(t *testing.T) {
+	t.Parallel()
+
+	if _, err := parseSleepDuration(scriptTable{
+		"duration_ms": {kind: scriptNumber, number: 0},
+	}); err == nil {
+		t.Fatal("parseSleepDuration() error = nil, want non-positive duration_ms error")
+	}
+}
+
+func TestExecuteScriptSleepOutputsProgress(t *testing.T) {
+	t.Parallel()
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	var out bytes.Buffer
+
+	sawGoAway, err := executeScript(h2c, scriptFile{
+		actions: []scriptTable{
+			{
+				"type":        {kind: scriptString, str: "sleep"},
+				"duration_ms": {kind: scriptNumber, number: 1},
+			},
+		},
+	}, &out)
+	if err != nil {
+		t.Fatalf("executeScript() error = %v", err)
+	}
+	if sawGoAway {
+		t.Fatal("executeScript() sawGoAway = true, want false")
+	}
+	if !strings.Contains(out.String(), ">> SLEEP 1ms") {
+		t.Fatalf("output = %q, want sleep progress line", out.String())
 	}
 }
 
