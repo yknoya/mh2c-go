@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -166,6 +168,39 @@ func TestParseConfigRejectsInvalidDirectionFilter(t *testing.T) {
 	}, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "invalid direction-filter") {
 		t.Fatalf("parseConfig() error = %v, want direction-filter validation", err)
+	}
+}
+
+func TestPrepareOutputWriterMirrorsOutputToFile(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "mh2c.log")
+
+	var stdout bytes.Buffer
+	out, closeFn, err := prepareOutputWriter(&stdout, outputPath)
+	if err != nil {
+		t.Fatalf("prepareOutputWriter() error = %v", err)
+	}
+	defer func() {
+		if err := closeFn(); err != nil {
+			t.Fatalf("closeFn() error = %v", err)
+		}
+	}()
+
+	if _, err := io.WriteString(out, "line one\nline two\n"); err != nil {
+		t.Fatalf("WriteString() error = %v", err)
+	}
+
+	saved, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if stdout.String() != "line one\nline two\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if string(saved) != stdout.String() {
+		t.Fatalf("saved output = %q, want %q", saved, stdout.String())
 	}
 }
 

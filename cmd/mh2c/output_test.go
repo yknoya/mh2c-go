@@ -203,3 +203,60 @@ func TestOutputControllerFlushesAutoCapturedResponse(t *testing.T) {
 		t.Fatalf("headers = %q, want :status: 200", headers)
 	}
 }
+
+func TestOutputControllerFiltersPushPromiseAndRawFrames(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "observe",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatHex,
+		decodeHeaders:   false,
+		showHeaderBlock: true,
+		frameFilters:    stringFlags{"push_promise", "raw"},
+		hasStreamFilter: true,
+		streamFilter:    1,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	if err := controller.HandleReceived(h2c, frame.PushPromiseFrame{
+		StreamID:         1,
+		Flags:            frame.FlagPushPromiseEndHeaders,
+		PromisedStreamID: 2,
+		BlockFragment:    []byte{0x82},
+	}); err != nil {
+		t.Fatalf("HandleReceived(push_promise) error = %v", err)
+	}
+	if err := controller.HandleReceived(h2c, frame.RawFrameFromParts(frame.Header{
+		Type:     frame.Type(0xfe),
+		Flags:    0x3,
+		StreamID: 1,
+	}, []byte{0xde, 0xad, 0xbe, 0xef})); err != nil {
+		t.Fatalf("HandleReceived(raw) error = %v", err)
+	}
+	if err := controller.HandleReceived(h2c, frame.ContinuationFrame{
+		StreamID:      1,
+		Flags:         frame.FlagContinuationEndHeaders,
+		BlockFragment: []byte{0x80},
+	}); err != nil {
+		t.Fatalf("HandleReceived(continuation) error = %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, "PUSH_PROMISE stream=1 promised=2") {
+		t.Fatalf("output = %q, want PUSH_PROMISE", text)
+	}
+	if !strings.Contains(text, "promised-stream-id: 2") {
+		t.Fatalf("output = %q, want promised stream detail", text)
+	}
+	if !strings.Contains(text, "raw-payload-hex: deadbeef") {
+		t.Fatalf("output = %q, want raw payload", text)
+	}
+	if strings.Contains(text, "CONTINUATION") {
+		t.Fatalf("output = %q, did not expect CONTINUATION", text)
+	}
+}

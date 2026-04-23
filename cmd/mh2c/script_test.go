@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"io"
 	"strings"
 	"testing"
@@ -102,6 +103,60 @@ func TestBuildScriptFrameHeaders(t *testing.T) {
 	}
 	if typed.StreamID != 1 || typed.Flags != frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream || len(typed.BlockFragment) == 0 {
 		t.Fatalf("HeadersFrame = %#v", typed)
+	}
+}
+
+func TestBuildScriptFramePushPromiseWithBlockHex(t *testing.T) {
+	t.Parallel()
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	got, err := buildScriptFrame(h2c, scriptTable{
+		"type":               {kind: scriptString, str: "push_promise"},
+		"stream_id":          {kind: scriptNumber, number: 1},
+		"promised_stream_id": {kind: scriptNumber, number: 2},
+		"flags":              {kind: scriptStringList, list: []string{"END_HEADERS"}},
+		"block_hex":          {kind: scriptString, str: "8286"},
+	})
+	if err != nil {
+		t.Fatalf("buildScriptFrame() error = %v", err)
+	}
+
+	typed, ok := got.(frame.PushPromiseFrame)
+	if !ok {
+		t.Fatalf("frame type = %T, want PushPromiseFrame", got)
+	}
+	if typed.StreamID != 1 || typed.PromisedStreamID != 2 || typed.Flags != frame.FlagPushPromiseEndHeaders {
+		t.Fatalf("PushPromiseFrame = %#v", typed)
+	}
+	if gotHex := hex.EncodeToString(typed.BlockFragment); gotHex != "8286" {
+		t.Fatalf("block fragment = %s, want 8286", gotHex)
+	}
+}
+
+func TestBuildScriptFrameRaw(t *testing.T) {
+	t.Parallel()
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	got, err := buildScriptFrame(h2c, scriptTable{
+		"type":        {kind: scriptString, str: "raw"},
+		"frame_type":  {kind: scriptNumber, number: 254},
+		"stream_id":   {kind: scriptNumber, number: 1},
+		"flags":       {kind: scriptNumber, number: 3},
+		"payload_hex": {kind: scriptString, str: "deadbeef"},
+	})
+	if err != nil {
+		t.Fatalf("buildScriptFrame() error = %v", err)
+	}
+
+	typed, ok := got.(frame.RawFrame)
+	if !ok {
+		t.Fatalf("frame type = %T, want RawFrame", got)
+	}
+	if typed.Header().Type != frame.Type(254) || typed.Header().Flags != 3 || typed.Header().StreamID != 1 {
+		t.Fatalf("RawFrame header = %#v", typed.Header())
+	}
+	if gotHex := hex.EncodeToString(typed.Payload()); gotHex != "deadbeef" {
+		t.Fatalf("payload = %s, want deadbeef", gotHex)
 	}
 }
 

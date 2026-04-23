@@ -16,6 +16,9 @@ The current implementation provides:
 - HPACK support in `hpack`
 - a manual debugging CLI in `cmd/mh2c`
 
+Reusable CLI examples live under [`examples/`](./examples), including observe
+flows, script files, and a small `jsonl` consumer.
+
 ## Install
 
 ```sh
@@ -138,6 +141,14 @@ ack_ping = true
 ./bin/mh2c --mode script --script-file ./request.toml
 ```
 
+Or use the checked-in examples directly:
+
+```sh
+./bin/mh2c --mode script --script-file ./examples/request.toml
+./bin/mh2c --mode script --script-file ./examples/unusual-raw-sequence.toml
+./bin/mh2c --mode observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+```
+
 ### Notes
 
 - `make build-cli` creates `./bin/mh2c` for local use
@@ -159,6 +170,7 @@ ack_ping = true
 - `--save-body path` stores the captured response body in request/observe mode
 - `--save-headers path` stores decoded response headers in request/observe mode
 - `--mode script --script-file file.toml` executes a scripted frame sequence
+- checked-in examples live under `examples/`
 - the default request/script helpers aim to keep common HTTP/2 state in sync so normal debugging stays practical
 - this does not turn `mh2c-go` into a high-level client: frames are still explicit and visible in the CLI output
 - when you want to bypass helper-managed state and send unusual or intentionally invalid bytes, prefer `block_hex` or `raw`

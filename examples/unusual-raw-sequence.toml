@@ -1,0 +1,45 @@
+[connection]
+url = "https://nghttp2.org/httpbin/headers"
+send_goaway = false
+timeout_ms = 5000
+
+[[action]]
+type = "preface"
+
+[[action]]
+type = "settings"
+settings = [
+  "ENABLE_PUSH=0",
+  "INITIAL_WINDOW_SIZE=65535",
+  "HEADER_TABLE_SIZE=8192",
+]
+
+[[action]]
+type = "receive"
+until = "settings"
+ack_settings = true
+
+[[action]]
+type = "raw"
+frame_type = 254
+stream_id = 0
+flags = 0
+payload_hex = "deadbeef"
+
+[[action]]
+type = "headers"
+stream_id = 1
+flags = ["END_HEADERS", "END_STREAM"]
+headers = [
+  ":method: GET",
+  ":path: /httpbin/headers",
+  ":scheme: https",
+  ":authority: nghttp2.org",
+  "user-agent: mh2c-go-unusual",
+]
+
+[[action]]
+type = "receive"
+stream_id = 1
+until = "end_stream"
+ack_ping = true
