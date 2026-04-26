@@ -141,6 +141,121 @@ func TestOutputControllerJSONLIncludesDecodedHeaders(t *testing.T) {
 	}
 }
 
+func TestOutputControllerJSONLMarksTruncatedDataTextSafely(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:         "observe",
+		outputFormat: outputFormatJSONL,
+		dataFormat:   dataFormatText,
+		dataLimit:    5,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	if err := controller.HandleReceived(h2c, frame.DataFrame{
+		StreamID: 1,
+		Data:     []byte("あい"),
+	}); err != nil {
+		t.Fatalf("HandleReceived(data) error = %v", err)
+	}
+
+	event := decodeJSONFrameEvent(t, out.Bytes())
+	if event.FrameType != "data" || event.PayloadLength != len([]byte("あい")) {
+		t.Fatalf("event = %#v", event)
+	}
+	if event.DataText != "\"あ\" (truncated)" {
+		t.Fatalf("DataText = %q, want truncated UTF-8-safe prefix", event.DataText)
+	}
+	if !event.Truncated {
+		t.Fatalf("event = %#v, want truncated=true", event)
+	}
+}
+
+func TestOutputControllerJSONLMarksTruncatedHeaderBlock(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "observe",
+		outputFormat:    outputFormatJSONL,
+		dataFormat:      dataFormatBoth,
+		dataLimit:       3,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	block, err := h2c.ResponseCodec().Encode([]hpack.HeaderField{
+		{Name: ":status", Value: "200"},
+		{Name: "content-type", Value: "text/plain"},
+	})
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	if err := controller.HandleReceived(h2c, frame.HeadersFrame{
+		StreamID:      1,
+		Flags:         frame.FlagHeadersEndHeaders,
+		BlockFragment: block,
+	}); err != nil {
+		t.Fatalf("HandleReceived(headers) error = %v", err)
+	}
+
+	event := decodeJSONFrameEvent(t, out.Bytes())
+	wantPayloadHex, wantTruncated := truncateHex(block, 3)
+	if event.FrameType != "headers" || event.PayloadLength != len(block) {
+		t.Fatalf("event = %#v", event)
+	}
+	if event.PayloadHex != wantPayloadHex {
+		t.Fatalf("PayloadHex = %q, want %q", event.PayloadHex, wantPayloadHex)
+	}
+	if event.Truncated != wantTruncated || !event.Truncated {
+		t.Fatalf("event = %#v, want truncated header block", event)
+	}
+}
+
+func TestOutputControllerJSONLIncludesDecodeWarnings(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "observe",
+		outputFormat:    outputFormatJSONL,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	if err := controller.HandleReceived(h2c, frame.HeadersFrame{
+		StreamID:      1,
+		Flags:         frame.FlagHeadersEndHeaders,
+		BlockFragment: buildWarningHeavyHeaderBlock(t),
+	}); err != nil {
+		t.Fatalf("HandleReceived(headers) error = %v", err)
+	}
+
+	event := decodeJSONFrameEvent(t, out.Bytes())
+	if len(event.DecodedHeaders) != 2 {
+		t.Fatalf("DecodedHeaders = %#v, want 2 decoded fields", event.DecodedHeaders)
+	}
+	if !containsWarningText(event.Warnings, "exceeds allowed max 4096") {
+		t.Fatalf("Warnings = %#v, want oversize table warning", event.Warnings)
+	}
+	if !containsWarningText(event.Warnings, "after first header field") {
+		t.Fatalf("Warnings = %#v, want late table update warning", event.Warnings)
+	}
+}
+
 func TestOutputControllerFlushesAutoCapturedResponse(t *testing.T) {
 	t.Parallel()
 
@@ -259,4 +374,40 @@ func TestOutputControllerFiltersPushPromiseAndRawFrames(t *testing.T) {
 	if strings.Contains(text, "CONTINUATION") {
 		t.Fatalf("output = %q, did not expect CONTINUATION", text)
 	}
+}
+
+func decodeJSONFrameEvent(t *testing.T, data []byte) jsonFrameEvent {
+	t.Helper()
+
+	var event jsonFrameEvent
+	if err := json.Unmarshal(bytes.TrimSpace(data), &event); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	return event
+}
+
+func buildWarningHeavyHeaderBlock(t *testing.T) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	enc := hpack.NewEncoder(&buf)
+	enc.SetMaxDynamicTableSizeLimit(8192)
+	enc.SetMaxDynamicTableSize(8192)
+	if err := enc.WriteField(hpack.HeaderField{Name: "x-first", Value: "one"}); err != nil {
+		t.Fatalf("WriteField(x-first) error = %v", err)
+	}
+	enc.SetMaxDynamicTableSize(2048)
+	if err := enc.WriteField(hpack.HeaderField{Name: "x-second", Value: "two"}); err != nil {
+		t.Fatalf("WriteField(x-second) error = %v", err)
+	}
+	return append([]byte(nil), buf.Bytes()...)
+}
+
+func containsWarningText(warnings []string, needle string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, needle) {
+			return true
+		}
+	}
+	return false
 }
