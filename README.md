@@ -138,7 +138,7 @@ ack_ping = true
 ```
 
 ```sh
-./bin/mh2c --mode script --script-file ./request.toml
+./bin/mh2c --mode script --script-file ./examples/request.toml
 ```
 
 Or use the checked-in examples directly:
@@ -160,6 +160,7 @@ Or use the checked-in examples directly:
 - `--mode observe` performs the HTTP/2 handshake and continues printing received frames until `GOAWAY`, `--timeout`, or `--max-recv`
 - `--max-recv N` limits the number of received frames in observe mode; `0` means unlimited
 - `--stream-filter id` keeps stream-specific output focused on one stream while still showing connection-level frames
+- `--direction-filter sent|received` is repeatable and keeps output focused on sent events, received events, or both
 - `--frame-filter name` is repeatable and accepts `settings`, `headers`, `continuation`, `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `push_promise`, `priority`, and `raw`
 - `--output jsonl` emits one JSON line per event instead of the default text output
 - `--data-format text|hex|both` controls how DATA, PING, and GOAWAY debug payloads are rendered
