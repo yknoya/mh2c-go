@@ -220,7 +220,7 @@ func TestOutputControllerJSONLMarksTruncatedHeaderBlock(t *testing.T) {
 	}
 }
 
-func TestOutputControllerJSONLIncludesDecodeWarnings(t *testing.T) {
+func TestOutputControllerJSONLRejectsInvalidHPACKBlock(t *testing.T) {
 	t.Parallel()
 
 	var out bytes.Buffer
@@ -236,23 +236,16 @@ func TestOutputControllerJSONLIncludesDecodeWarnings(t *testing.T) {
 	}
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleReceived(h2c, frame.HeadersFrame{
+	err = controller.HandleReceived(h2c, frame.HeadersFrame{
 		StreamID:      1,
 		Flags:         frame.FlagHeadersEndHeaders,
-		BlockFragment: buildWarningHeavyHeaderBlock(t),
-	}); err != nil {
-		t.Fatalf("HandleReceived(headers) error = %v", err)
+		BlockFragment: buildInvalidHeaderBlock(t),
+	})
+	if err == nil {
+		t.Fatal("HandleReceived(headers) error = nil, want HPACK decode error")
 	}
-
-	event := decodeJSONFrameEvent(t, out.Bytes())
-	if len(event.DecodedHeaders) != 2 {
-		t.Fatalf("DecodedHeaders = %#v, want 2 decoded fields", event.DecodedHeaders)
-	}
-	if !containsWarningText(event.Warnings, "exceeds allowed max 4096") {
-		t.Fatalf("Warnings = %#v, want oversize table warning", event.Warnings)
-	}
-	if !containsWarningText(event.Warnings, "after first header field") {
-		t.Fatalf("Warnings = %#v, want late table update warning", event.Warnings)
+	if !strings.Contains(err.Error(), "dynamic table size update too large") {
+		t.Fatalf("HandleReceived(headers) error = %v, want dynamic table size update error", err)
 	}
 }
 
@@ -386,7 +379,7 @@ func decodeJSONFrameEvent(t *testing.T, data []byte) jsonFrameEvent {
 	return event
 }
 
-func buildWarningHeavyHeaderBlock(t *testing.T) []byte {
+func buildInvalidHeaderBlock(t *testing.T) []byte {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -401,13 +394,4 @@ func buildWarningHeavyHeaderBlock(t *testing.T) []byte {
 		t.Fatalf("WriteField(x-second) error = %v", err)
 	}
 	return append([]byte(nil), buf.Bytes()...)
-}
-
-func containsWarningText(warnings []string, needle string) bool {
-	for _, warning := range warnings {
-		if strings.Contains(warning, needle) {
-			return true
-		}
-	}
-	return false
 }

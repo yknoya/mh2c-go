@@ -8,7 +8,7 @@ to the package they affect.
 - `cmd/mh2c/`: CLI entrypoint, script-mode parser, and CLI tests
 - `client/`: connection preface, frame send/receive, HPACK helpers, integration tests
 - `frame/`: HTTP/2 frame types, binary encoding/decoding, frame unit tests
-- `hpack/`: HPACK implementation and codec wrappers
+- `hpack/`: thin wrappers around `golang.org/x/net/http2/hpack`; do not vendor or copy HPACK implementation code here
 - `tlsconn/`: TLS + ALPN `h2` bootstrap
 - `internal/wire/`: low-level wire helpers shared by packages
 

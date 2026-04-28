@@ -1,9 +1,6 @@
 package hpack
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCodecRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -32,52 +29,27 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecodeDetailedWarnsOnLateDynamicTableSizeUpdate(t *testing.T) {
+func TestDecodeDetailedRejectsLateDynamicTableSizeUpdate(t *testing.T) {
 	t.Parallel()
 
 	codec := NewCodec(4096)
-	fieldBlock, err := codec.Encode([]HeaderField{{Name: ":method", Value: "GET"}})
+	fieldBlock, err := codec.Encode([]HeaderField{{Name: "x-test", Value: "one"}})
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	block := append(append([]byte(nil), fieldBlock...), appendTableSize(nil, 2048)...)
+	block := append(append([]byte(nil), fieldBlock...), tableSizeUpdate2048...)
 
-	report, err := codec.DecodeDetailed(block)
-	if err != nil {
-		t.Fatalf("DecodeDetailed() error = %v", err)
-	}
-	if len(report.Fields) != 1 || report.Fields[0].Name != ":method" || report.Fields[0].Value != "GET" {
-		t.Fatalf("Fields = %#v", report.Fields)
-	}
-	if !containsWarning(report.Warnings, "after first header field") {
-		t.Fatalf("Warnings = %#v", report.Warnings)
+	if _, err := codec.DecodeDetailed(block); err == nil {
+		t.Fatal("DecodeDetailed() error = nil, want late dynamic table size update error")
 	}
 }
 
-func TestDecodeDetailedWarnsAndExpandsOnOversizeDynamicTableUpdate(t *testing.T) {
+func TestDecodeDetailedRejectsOversizeDynamicTableUpdate(t *testing.T) {
 	t.Parallel()
 
 	codec := NewCodec(4096)
-	block := appendTableSize(nil, 8192)
-	block = append(block, appendNewName(nil, HeaderField{Name: "x-test", Value: "one"}, true)...)
-
-	report, err := codec.DecodeDetailed(block)
-	if err != nil {
-		t.Fatalf("DecodeDetailed() error = %v", err)
-	}
-	if !containsWarning(report.Warnings, "exceeds allowed max 4096") {
-		t.Fatalf("Warnings = %#v", report.Warnings)
-	}
-	if len(report.Fields) != 1 || report.Fields[0].Name != "x-test" || report.Fields[0].Value != "one" {
-		t.Fatalf("Fields = %#v", report.Fields)
-	}
-
-	report, err = codec.DecodeDetailed(appendIndexed(nil, uint64(staticTable.len()+1)))
-	if err != nil {
-		t.Fatalf("DecodeDetailed(indexed) error = %v", err)
-	}
-	if len(report.Fields) != 1 || report.Fields[0].Name != "x-test" || report.Fields[0].Value != "one" {
-		t.Fatalf("Indexed Fields = %#v", report.Fields)
+	if _, err := codec.DecodeDetailed(tableSizeUpdate8192); err == nil {
+		t.Fatal("DecodeDetailed() error = nil, want oversize dynamic table update error")
 	}
 }
 
@@ -85,7 +57,7 @@ func TestDecodeDetailedInvalidIndexStillErrors(t *testing.T) {
 	t.Parallel()
 
 	codec := NewCodec(4096)
-	if _, err := codec.DecodeDetailed(appendIndexed(nil, uint64(staticTable.len()+1))); err == nil {
+	if _, err := codec.DecodeDetailed(indexStaticTableBeyondEnd); err == nil {
 		t.Fatal("DecodeDetailed() error = nil, want invalid index error")
 	}
 }
@@ -103,11 +75,8 @@ func TestDecodeDetailedTruncatedBlockStillErrors(t *testing.T) {
 	}
 }
 
-func containsWarning(warnings []string, needle string) bool {
-	for _, warning := range warnings {
-		if strings.Contains(warning, needle) {
-			return true
-		}
-	}
-	return false
-}
+var (
+	tableSizeUpdate2048       = []byte{0x3f, 0xe1, 0x0f}
+	tableSizeUpdate8192       = []byte{0x3f, 0xe1, 0x3f}
+	indexStaticTableBeyondEnd = []byte{0xbe}
+)

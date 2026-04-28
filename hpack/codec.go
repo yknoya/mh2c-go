@@ -2,7 +2,28 @@ package hpack
 
 import (
 	"bytes"
+
+	xhpack "golang.org/x/net/http2/hpack"
 )
+
+const initialHeaderTableSize = 4096
+
+type HeaderField = xhpack.HeaderField
+type Decoder = xhpack.Decoder
+type Encoder = xhpack.Encoder
+type DecodingError = xhpack.DecodingError
+type InvalidIndexError = xhpack.InvalidIndexError
+
+var (
+	ErrStringLength = xhpack.ErrStringLength
+	NewDecoder      = xhpack.NewDecoder
+	NewEncoder      = xhpack.NewEncoder
+)
+
+type DecodeReport struct {
+	Fields   []HeaderField
+	Warnings []string
+}
 
 type Codec struct {
 	maxSize uint32
@@ -84,5 +105,9 @@ func (c *Codec) Decode(block []byte) ([]HeaderField, error) {
 }
 
 func (c *Codec) DecodeDetailed(block []byte) (DecodeReport, error) {
-	return c.decoder.DecodeFullDetailed(block)
+	fields, err := c.decoder.DecodeFull(block)
+	if err != nil {
+		return DecodeReport{}, err
+	}
+	return DecodeReport{Fields: fields}, nil
 }

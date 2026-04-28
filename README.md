@@ -13,7 +13,7 @@ The current implementation provides:
 - manual frame assembly in the `frame` package
 - TLS + ALPN `h2` connection handling in `tlsconn`
 - a low-level client in `client`
-- HPACK support in `hpack`
+- HPACK support via `golang.org/x/net/http2/hpack`, wrapped by the local `hpack` package
 - a manual debugging CLI in `cmd/mh2c`
 
 Reusable CLI examples live under [`examples/`](./examples), including observe
