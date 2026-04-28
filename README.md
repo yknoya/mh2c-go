@@ -51,7 +51,21 @@ go test ./...
 their payload details instead of hiding protocol activity behind a
 curl-style response summary.
 
-### Request Example
+### Command Overview
+
+```text
+mh2c request [options]
+mh2c ping [options]
+mh2c observe [options]
+mh2c script run --script-file file.toml [options]
+mh2c script describe [--type action_type]
+mh2c script template request
+mh2c script validate --script-file file.toml
+```
+
+### Quick Examples
+
+Request:
 
 ```sh
 ./bin/mh2c request \
@@ -59,7 +73,7 @@ curl-style response summary.
   --header 'user-agent:mh2c-go'
 ```
 
-### POST Example
+POST request:
 
 ```sh
 ./bin/mh2c request \
@@ -69,7 +83,7 @@ curl-style response summary.
   --data '{"message":"hello from mh2c-go"}'
 ```
 
-### Ping Example
+PING:
 
 ```sh
 ./bin/mh2c ping \
@@ -77,7 +91,7 @@ curl-style response summary.
   --ping-data mh2cping
 ```
 
-### Observe Example
+Observe selected traffic:
 
 ```sh
 ./bin/mh2c observe \
@@ -89,78 +103,51 @@ curl-style response summary.
   --save-headers ./headers.txt
 ```
 
-### Script Example
-
-```toml
-[connection]
-url = "https://nghttp2.org/httpbin/headers"
-send_goaway = false
-
-[[action]]
-type = "preface"
-
-[[action]]
-type = "settings"
-settings = [
-  "ENABLE_PUSH=0",
-  "INITIAL_WINDOW_SIZE=65535",
-  "HEADER_TABLE_SIZE=8192",
-]
-
-[[action]]
-type = "receive"
-until = "settings"
-ack_settings = true
-
-[[action]]
-type = "sleep"
-duration_ms = 500
-
-[[action]]
-type = "headers"
-stream_id = 1
-flags = ["END_HEADERS", "END_STREAM"]
-headers = [
-  ":method: GET",
-  ":path: /httpbin/headers",
-  ":scheme: https",
-  ":authority: nghttp2.org",
-  "user-agent: mh2c-go-script",
-]
-
-[[action]]
-type = "receive"
-stream_id = 1
-until = "end_stream"
-ack_ping = true
-```
+Run a script:
 
 ```sh
 ./bin/mh2c script run --script-file ./examples/request.toml
 ```
 
-Or use the checked-in examples directly:
+Other checked-in examples:
 
 ```sh
-./bin/mh2c script run --script-file ./examples/request.toml
 ./bin/mh2c script run --script-file ./examples/unusual-raw-sequence.toml
 ./bin/mh2c observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+```
+
+### Script Authoring
+
+Use the script helpers to inspect the supported TOML shape before editing a
+script file:
+
+```sh
 ./bin/mh2c script describe --type headers
 ./bin/mh2c script template request
 ./bin/mh2c script validate --script-file ./examples/request.toml
 ```
 
+Reusable script files live under [`examples/`](./examples). A normal request
+flow is available in [`examples/request.toml`](./examples/request.toml), and
+`examples/unusual-raw-sequence.toml` shows how to keep raw protocol details
+visible.
+
 ### Notes
+
+Command and target options:
 
 - `make build-cli` creates `./bin/mh2c` for local use
 - `make install` runs `go install ./cmd/mh2c`
+- `mh2c request`, `mh2c ping`, `mh2c observe`, and `mh2c script ...` are the supported command forms
 - `--url` overrides `--scheme`, `--host`, `--port`, and `--path`
 - `--body-file path/to/file` reads the request body from a file
 - `--body-file -` reads the request body from stdin
 - `--authority` overrides the `:authority` pseudo-header
-- `mh2c request`, `mh2c ping`, `mh2c observe`, and `mh2c script ...` are the supported command forms
 - `mh2c observe` performs the HTTP/2 handshake and continues printing received frames until `GOAWAY`, `--timeout`, or `--max-recv`
 - `--max-recv N` limits the number of received frames in observe mode; `0` means unlimited
+
+Output controls:
+
 - `--stream-filter id` keeps stream-specific output focused on one stream while still showing connection-level frames
 - `--direction-filter sent|received` is repeatable and keeps output focused on sent events, received events, or both
 - `--frame-filter name` is repeatable and accepts `settings`, `headers`, `continuation`, `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `push_promise`, `priority`, and `raw`
@@ -172,14 +159,13 @@ Or use the checked-in examples directly:
 - `--save-output path` mirrors the displayed CLI output into a file
 - `--save-body path` stores the captured response body in request/observe mode
 - `--save-headers path` stores decoded response headers in request/observe mode
+
+Script mode:
+
 - `mh2c script run --script-file file.toml` executes a scripted frame sequence
 - `mh2c script describe [--type action_type]` prints supported script action fields
 - `mh2c script template request` prints a starter TOML script
 - `mh2c script validate --script-file file.toml` checks a script without connecting to a server
-- checked-in examples live under `examples/`
-- the default request/script helpers aim to keep common HTTP/2 state in sync so normal debugging stays practical
-- this does not turn `mh2c-go` into a high-level client: frames are still explicit and visible in the CLI output
-- when you want to bypass helper-managed state and send unusual or intentionally invalid bytes, prefer `block_hex` or `raw`
 - script mode does not auto-send connection preface or SETTINGS; include them explicitly when needed
 - supported script actions are `preface`, `sleep`, `settings`, `headers`, `continuation`,
   `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `priority`,
@@ -187,6 +173,12 @@ Or use the checked-in examples directly:
 - `sleep` uses `duration_ms = <int>` and prints progress such as `>> SLEEP 500ms`
 - the script parser accepts the TOML subset used in the example above:
   strings, integers, booleans, string arrays, `[connection]`, and `[[action]]`
+
+Manual debugging boundary:
+
+- the default request/script helpers aim to keep common HTTP/2 state in sync so normal debugging stays practical
+- this does not turn `mh2c-go` into a high-level client: frames are still explicit and visible in the CLI output
+- when you want to bypass helper-managed state and send unusual or intentionally invalid bytes, prefer `block_hex` or `raw`
 - received frames are printed with payload details such as decoded headers,
   DATA text/hex, SETTINGS entries, and PING payloads
 - `go run ./cmd/mh2c request ...` still works for ad-hoc execution without producing a local binary
