@@ -296,6 +296,104 @@ func TestExecuteScriptSleepOutputsProgress(t *testing.T) {
 	}
 }
 
+func TestDescribeScriptActionsIncludesKnownTypes(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := describeScriptActions(&out, ""); err != nil {
+		t.Fatalf("describeScriptActions() error = %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{"headers", "receive", "raw"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output = %q, want %q", text, want)
+		}
+	}
+}
+
+func TestDescribeScriptActionHeaders(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := describeScriptActions(&out, "headers"); err != nil {
+		t.Fatalf("describeScriptActions() error = %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{"Action: headers", "stream_id", "headers", "block_hex", "END_HEADERS"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output = %q, want %q", text, want)
+		}
+	}
+}
+
+func TestWriteScriptTemplateRequestParses(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	if err := writeScriptTemplate(&out, "request"); err != nil {
+		t.Fatalf("writeScriptTemplate() error = %v", err)
+	}
+	script, err := parseScript(out.String())
+	if err != nil {
+		t.Fatalf("parseScript(template) error = %v", err)
+	}
+	if err := validateScript(script); err != nil {
+		t.Fatalf("validateScript(template) error = %v", err)
+	}
+}
+
+func TestValidateScriptRejectsUnknownActionType(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "unknown"
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), `unsupported action type "unknown"`) {
+		t.Fatalf("validateScript() error = %v, want unknown action type", err)
+	}
+}
+
+func TestValidateScriptRejectsMissingRequiredField(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "raw"
+stream_id = 1
+flags = 0
+payload_hex = "00"
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "action.frame_type is required") {
+		t.Fatalf("validateScript() error = %v, want missing frame_type", err)
+	}
+}
+
+func TestValidateScriptRejectsUnknownActionField(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "preface"
+extra = "value"
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "action.extra is not supported") {
+		t.Fatalf("validateScript() error = %v, want unknown field", err)
+	}
+}
+
 type nopConn struct{}
 
 func (nopConn) Read([]byte) (int, error)    { return 0, io.EOF }

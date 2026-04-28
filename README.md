@@ -54,7 +54,7 @@ curl-style response summary.
 ### Request Example
 
 ```sh
-./bin/mh2c \
+./bin/mh2c request \
   --url https://nghttp2.org/httpbin/headers \
   --header 'user-agent:mh2c-go'
 ```
@@ -62,7 +62,7 @@ curl-style response summary.
 ### POST Example
 
 ```sh
-./bin/mh2c \
+./bin/mh2c request \
   --url https://nghttp2.org/httpbin/post \
   --method POST \
   --header 'content-type: application/json' \
@@ -72,18 +72,16 @@ curl-style response summary.
 ### Ping Example
 
 ```sh
-./bin/mh2c \
+./bin/mh2c ping \
   --host nghttp2.org \
-  --mode ping \
   --ping-data mh2cping
 ```
 
 ### Observe Example
 
 ```sh
-./bin/mh2c \
+./bin/mh2c observe \
   --host nghttp2.org \
-  --mode observe \
   --frame-filter headers \
   --frame-filter data \
   --stream-filter 1 \
@@ -138,15 +136,18 @@ ack_ping = true
 ```
 
 ```sh
-./bin/mh2c --mode script --script-file ./examples/request.toml
+./bin/mh2c script run --script-file ./examples/request.toml
 ```
 
 Or use the checked-in examples directly:
 
 ```sh
-./bin/mh2c --mode script --script-file ./examples/request.toml
-./bin/mh2c --mode script --script-file ./examples/unusual-raw-sequence.toml
-./bin/mh2c --mode observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+./bin/mh2c script run --script-file ./examples/request.toml
+./bin/mh2c script run --script-file ./examples/unusual-raw-sequence.toml
+./bin/mh2c observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+./bin/mh2c script describe --type headers
+./bin/mh2c script template request
+./bin/mh2c script validate --script-file ./examples/request.toml
 ```
 
 ### Notes
@@ -157,7 +158,8 @@ Or use the checked-in examples directly:
 - `--body-file path/to/file` reads the request body from a file
 - `--body-file -` reads the request body from stdin
 - `--authority` overrides the `:authority` pseudo-header
-- `--mode observe` performs the HTTP/2 handshake and continues printing received frames until `GOAWAY`, `--timeout`, or `--max-recv`
+- `mh2c request`, `mh2c ping`, `mh2c observe`, and `mh2c script ...` are the supported command forms
+- `mh2c observe` performs the HTTP/2 handshake and continues printing received frames until `GOAWAY`, `--timeout`, or `--max-recv`
 - `--max-recv N` limits the number of received frames in observe mode; `0` means unlimited
 - `--stream-filter id` keeps stream-specific output focused on one stream while still showing connection-level frames
 - `--direction-filter sent|received` is repeatable and keeps output focused on sent events, received events, or both
@@ -170,7 +172,10 @@ Or use the checked-in examples directly:
 - `--save-output path` mirrors the displayed CLI output into a file
 - `--save-body path` stores the captured response body in request/observe mode
 - `--save-headers path` stores decoded response headers in request/observe mode
-- `--mode script --script-file file.toml` executes a scripted frame sequence
+- `mh2c script run --script-file file.toml` executes a scripted frame sequence
+- `mh2c script describe [--type action_type]` prints supported script action fields
+- `mh2c script template request` prints a starter TOML script
+- `mh2c script validate --script-file file.toml` checks a script without connecting to a server
 - checked-in examples live under `examples/`
 - the default request/script helpers aim to keep common HTTP/2 state in sync so normal debugging stays practical
 - this does not turn `mh2c-go` into a high-level client: frames are still explicit and visible in the CLI output
@@ -184,7 +189,7 @@ Or use the checked-in examples directly:
   strings, integers, booleans, string arrays, `[connection]`, and `[[action]]`
 - received frames are printed with payload details such as decoded headers,
   DATA text/hex, SETTINGS entries, and PING payloads
-- `go run ./cmd/mh2c ...` still works for ad-hoc execution without producing a local binary
+- `go run ./cmd/mh2c request ...` still works for ad-hoc execution without producing a local binary
 
 ## Package Layout
 

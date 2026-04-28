@@ -12,8 +12,10 @@ Use `./bin/mh2c` after `make build-cli` for the common local workflow.
 ## Typical Runs
 
 ```sh
-./bin/mh2c --mode script --script-file ./examples/request.toml
-./bin/mh2c --mode script --script-file ./examples/unusual-raw-sequence.toml
-./bin/mh2c --mode observe --host nghttp2.org --frame-filter headers --frame-filter data --save-body ./body.bin
-./bin/mh2c --mode observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+./bin/mh2c script run --script-file ./examples/request.toml
+./bin/mh2c script run --script-file ./examples/unusual-raw-sequence.toml
+./bin/mh2c observe --host nghttp2.org --frame-filter headers --frame-filter data --save-body ./body.bin
+./bin/mh2c observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
+./bin/mh2c script describe --type headers
+./bin/mh2c script validate --script-file ./examples/request.toml
 ```

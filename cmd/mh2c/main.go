@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,15 +22,30 @@ func main() {
 func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	cfg, err := parseConfig(args, stderr)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
+	}
+	switch cfg.scriptCommand {
+	case "describe":
+		return describeScriptActions(stdout, cfg.scriptDescribe)
+	case "template":
+		return writeScriptTemplate(stdout, cfg.scriptTemplate)
+	case "validate":
+		script, err := parseScriptFile(cfg.scriptFile)
+		if err != nil {
+			return err
+		}
+		return validateScript(script)
 	}
 	var script scriptFile
 	if cfg.mode == "script" {
-		if cfg.scriptFile == "" {
-			return fmt.Errorf("script-file is required when mode=script")
-		}
 		script, err = parseScriptFile(cfg.scriptFile)
 		if err != nil {
+			return err
+		}
+		if err := validateScript(script); err != nil {
 			return err
 		}
 		cfg, err = applyScriptConnection(cfg, script)

@@ -121,7 +121,7 @@ func TestParseConfigObserveMode(t *testing.T) {
 
 	var stderr bytes.Buffer
 	cfg, err := parseConfig([]string{
-		"--mode", "observe",
+		"observe",
 		"--output", "jsonl",
 		"--data-format", "hex",
 		"--direction-filter", "received",
@@ -146,16 +146,25 @@ func TestParseConfigObserveMode(t *testing.T) {
 	}
 }
 
-func TestParseConfigRejectsSaveBodyOutsideRequestOrObserve(t *testing.T) {
+func TestParseConfigRequestCommand(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
-	_, err := parseConfig([]string{
-		"--mode", "ping",
-		"--save-body", "body.bin",
+	cfg, err := parseConfig([]string{
+		"request",
+		"--url", "https://example.com/demo",
+		"--method", "POST",
+		"--header", "content-type:application/json",
+		"--data", "{}",
 	}, &stderr)
-	if err == nil || !strings.Contains(err.Error(), "save-body and save-headers are only supported") {
-		t.Fatalf("parseConfig() error = %v, want save-body validation", err)
+	if err != nil {
+		t.Fatalf("parseConfig() error = %v", err)
+	}
+	if cfg.mode != "request" || cfg.rawURL != "https://example.com/demo" || cfg.method != "POST" || cfg.data != "{}" {
+		t.Fatalf("parseConfig() = %#v", cfg)
+	}
+	if len(cfg.headers) != 1 || cfg.headers[0] != "content-type:application/json" {
+		t.Fatalf("headers = %#v", cfg.headers)
 	}
 }
 
@@ -164,10 +173,43 @@ func TestParseConfigRejectsInvalidDirectionFilter(t *testing.T) {
 
 	var stderr bytes.Buffer
 	_, err := parseConfig([]string{
+		"request",
 		"--direction-filter", "outbound",
 	}, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "invalid direction-filter") {
 		t.Fatalf("parseConfig() error = %v, want direction-filter validation", err)
+	}
+}
+
+func TestParseConfigRejectsLegacyModeFlag(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	_, err := parseConfig([]string{
+		"--mode", "script",
+	}, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "--mode has been replaced by subcommands") {
+		t.Fatalf("parseConfig() error = %v, want legacy mode error", err)
+	}
+}
+
+func TestParseConfigScriptRun(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	cfg, err := parseConfig([]string{
+		"script", "run",
+		"--script-file", "request.toml",
+		"--direction-filter", "sent",
+	}, &stderr)
+	if err != nil {
+		t.Fatalf("parseConfig() error = %v", err)
+	}
+	if cfg.mode != "script" || cfg.scriptCommand != "run" || cfg.scriptFile != "request.toml" {
+		t.Fatalf("parseConfig() = %#v", cfg)
+	}
+	if len(cfg.directionFilters) != 1 || cfg.directionFilters[0] != "sent" {
+		t.Fatalf("directionFilters = %#v", cfg.directionFilters)
 	}
 }
 
