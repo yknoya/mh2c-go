@@ -54,6 +54,22 @@ for example `client/integration_test.go`.
 Name tests by behavior, such as `TestPushPromiseFrameRoundTrip` or
 `TestHTTP2RoundTripAgainstTLSServer`.
 
+## Subagent Workflow
+
+When using Codex subagents in this repository, keep delegation scoped to the
+manual HTTP/2 debugging purpose.
+
+- Use explorer-style agents for read-only discovery, such as finding the frame
+  path, CLI output policy, or test coverage gaps.
+- Use worker-style agents only with explicit file or package ownership, and
+  require them to preserve frame-level visibility, low-level control, and raw
+  escape hatches.
+- Use review-style agents after implementation to prioritize protocol
+  correctness, observability regressions, missing tests, and accidental
+  high-level HTTP client behavior.
+- Do not ask subagents to vendor HPACK code, hide raw frame bytes behind
+  convenience APIs, or revert edits made by other agents.
+
 ## Commit & Pull Request Guidelines
 
 Commits currently follow concise Conventional Commit style, e.g.
