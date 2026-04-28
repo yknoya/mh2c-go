@@ -200,15 +200,46 @@ func TestConsumeHeaderBlockForDisplay(t *testing.T) {
 	}
 }
 
-func TestParseStringArray(t *testing.T) {
+func TestParseScriptAcceptsTOMLStringArrays(t *testing.T) {
 	t.Parallel()
 
-	got, err := parseStringArray("[\"a\", \"b\", \"c\"]")
+	script, err := parseScript(`
+[[action]]
+type = 'headers'
+stream_id = 1
+flags = [
+  'END_HEADERS',
+  'END_STREAM',
+]
+headers = [
+  ':method: GET',
+  ':path: /',
+]
+`)
 	if err != nil {
-		t.Fatalf("parseStringArray() error = %v", err)
+		t.Fatalf("parseScript() error = %v", err)
 	}
-	if strings.Join(got, ",") != "a,b,c" {
-		t.Fatalf("parseStringArray() = %#v", got)
+	flags, ok, err := script.actions[0].stringListValue("flags")
+	if err != nil || !ok || strings.Join(flags, ",") != "END_HEADERS,END_STREAM" {
+		t.Fatalf("flags = %#v, ok = %t, err = %v", flags, ok, err)
+	}
+	headers, ok, err := script.actions[0].stringListValue("headers")
+	if err != nil || !ok || strings.Join(headers, ",") != ":method: GET,:path: /" {
+		t.Fatalf("headers = %#v, ok = %t, err = %v", headers, ok, err)
+	}
+}
+
+func TestParseScriptRejectsNonStringArray(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseScript(`
+[[action]]
+type = "headers"
+stream_id = 1
+flags = ["END_HEADERS", 1]
+`)
+	if err == nil || !strings.Contains(err.Error(), "array elements must be strings") {
+		t.Fatalf("parseScript() error = %v, want string array validation", err)
 	}
 }
 
