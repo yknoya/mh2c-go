@@ -45,39 +45,12 @@ func (o *outputController) buildJSONEvent(direction string, f frame.Frame, heade
 
 	switch typed := f.(type) {
 	case frame.DataFrame:
-		event.PayloadLength = len(typed.Data)
-		switch o.dataFormat {
-		case dataFormatText:
-			event.DataText, event.Truncated = formatDataTextJSON(typed.Data, o.dataLimit)
-		case dataFormatHex:
-			event.DataHex, event.Truncated = truncateHex(typed.Data, o.dataLimit)
-		default:
-			event.DataHex, event.Truncated = truncateHex(typed.Data, o.dataLimit)
-			event.DataText, _ = formatDataTextJSON(typed.Data, o.dataLimit)
-		}
+		o.applyJSONDataPayload(&event, typed.Data)
 	case frame.PingFrame:
-		event.PayloadLength = len(typed.Data)
-		switch o.dataFormat {
-		case dataFormatText:
-			event.DataText, event.Truncated = formatDataTextJSON(typed.Data[:], o.dataLimit)
-		case dataFormatHex:
-			event.DataHex, event.Truncated = truncateHex(typed.Data[:], o.dataLimit)
-		default:
-			event.DataHex, event.Truncated = truncateHex(typed.Data[:], o.dataLimit)
-			event.DataText, _ = formatDataTextJSON(typed.Data[:], o.dataLimit)
-		}
+		o.applyJSONDataPayload(&event, typed.Data[:])
 	case frame.GoAwayFrame:
 		if len(typed.DebugData) > 0 {
-			event.PayloadLength = len(typed.DebugData)
-			switch o.dataFormat {
-			case dataFormatText:
-				event.DataText, event.Truncated = formatDataTextJSON(typed.DebugData, o.dataLimit)
-			case dataFormatHex:
-				event.DataHex, event.Truncated = truncateHex(typed.DebugData, o.dataLimit)
-			default:
-				event.DataHex, event.Truncated = truncateHex(typed.DebugData, o.dataLimit)
-				event.DataText, _ = formatDataTextJSON(typed.DebugData, o.dataLimit)
-			}
+			o.applyJSONDataPayload(&event, typed.DebugData)
 		}
 	}
 
@@ -92,6 +65,19 @@ func (o *outputController) buildJSONEvent(direction string, f frame.Frame, heade
 	}
 
 	return event
+}
+
+func (o *outputController) applyJSONDataPayload(event *jsonFrameEvent, data []byte) {
+	event.PayloadLength = len(data)
+	switch o.dataFormat {
+	case dataFormatText:
+		event.DataText, event.Truncated = formatDataTextJSON(data, o.dataLimit)
+	case dataFormatHex:
+		event.DataHex, event.Truncated = truncateHex(data, o.dataLimit)
+	default:
+		event.DataHex, event.Truncated = truncateHex(data, o.dataLimit)
+		event.DataText, _ = formatDataTextJSON(data, o.dataLimit)
+	}
 }
 
 func (o *outputController) writeJSON(event jsonFrameEvent) error {

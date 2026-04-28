@@ -61,6 +61,20 @@ func sendFrameAndReport(h2c *client.Client, out *outputController, f frame.Frame
 	return out.HandleSent(h2c, f)
 }
 
+func ackControlFrame(h2c *client.Client, out *outputController, f frame.Frame) error {
+	switch typed := f.(type) {
+	case frame.SettingsFrame:
+		if typed.Flags&frame.FlagSettingsAck == 0 {
+			return sendFrameAndReport(h2c, out, frame.SettingsFrame{Flags: frame.FlagSettingsAck})
+		}
+	case frame.PingFrame:
+		if typed.Flags&frame.FlagPingAck == 0 {
+			return sendFrameAndReport(h2c, out, frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data})
+		}
+	}
+	return nil
+}
+
 func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputController) (bool, error) {
 	state := responseState{streamID: streamID}
 	sawGoAway := false
@@ -73,29 +87,11 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputContr
 		if err := out.HandleReceived(h2c, f); err != nil {
 			return sawGoAway, err
 		}
+		if err := ackControlFrame(h2c, out, f); err != nil {
+			return sawGoAway, err
+		}
 
-		switch typed := f.(type) {
-		case frame.SettingsFrame:
-			if typed.Flags&frame.FlagSettingsAck == 0 {
-				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
-			}
-		case frame.PingFrame:
-			if typed.Flags&frame.FlagPingAck == 0 {
-				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
-			}
-		case frame.GoAwayFrame:
+		if _, ok := f.(frame.GoAwayFrame); ok {
 			sawGoAway = true
 			return sawGoAway, nil
 		}
@@ -120,27 +116,13 @@ func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) 
 		if err := out.HandleReceived(h2c, f); err != nil {
 			return sawGoAway, err
 		}
+		if err := ackControlFrame(h2c, out, f); err != nil {
+			return sawGoAway, err
+		}
 
 		switch typed := f.(type) {
-		case frame.SettingsFrame:
-			if typed.Flags&frame.FlagSettingsAck == 0 {
-				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
-			}
 		case frame.PingFrame:
 			if typed.Flags&frame.FlagPingAck == 0 {
-				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
 				continue
 			}
 			if typed.Data == want {
@@ -169,29 +151,11 @@ func receiveObserveFrames(h2c *client.Client, maxRecv uint, out *outputControlle
 		if err := out.HandleReceived(h2c, f); err != nil {
 			return sawGoAway, err
 		}
+		if err := ackControlFrame(h2c, out, f); err != nil {
+			return sawGoAway, err
+		}
 
-		switch typed := f.(type) {
-		case frame.SettingsFrame:
-			if typed.Flags&frame.FlagSettingsAck == 0 {
-				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
-			}
-		case frame.PingFrame:
-			if typed.Flags&frame.FlagPingAck == 0 {
-				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
-				if err := h2c.SendFrame(ack); err != nil {
-					return sawGoAway, err
-				}
-				if err := out.HandleSent(h2c, ack); err != nil {
-					return sawGoAway, err
-				}
-			}
-		case frame.GoAwayFrame:
+		if _, ok := f.(frame.GoAwayFrame); ok {
 			sawGoAway = true
 			return sawGoAway, nil
 		}
