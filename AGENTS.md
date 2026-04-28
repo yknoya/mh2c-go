@@ -40,6 +40,11 @@ Prefer small, protocol-focused changes. This project is a manual HTTP/2 client,
 not a high-level convenience client, so preserve frame-level visibility and
 explicit control in the CLI.
 
+Do not copy or vendor third-party implementation code into this repository.
+When protocol helpers are needed, use Go module dependencies and keep only thin
+local wrappers or adapters here. In particular, do not add files with external
+copyright headers such as `Copyright 20XX The Go Authors`.
+
 ## Testing Guidelines
 
 Use the standard `testing` package. Add focused unit tests in the touched
