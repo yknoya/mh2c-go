@@ -15,12 +15,6 @@ import (
 
 const ConnectionPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
-type rwc interface {
-	io.Reader
-	io.Writer
-	io.Closer
-}
-
 type Option func(*config)
 
 type config struct {
@@ -54,7 +48,7 @@ func WithMaxDynamicTableSize(v uint32) Option {
 }
 
 type Client struct {
-	conn          rwc
+	conn          io.ReadWriteCloser
 	requestCodec  *hpack.Codec
 	responseCodec *hpack.Codec
 }
@@ -74,7 +68,7 @@ func New(ctx context.Context, host string, port uint16, opts ...Option) (*Client
 	return NewWithConn(conn, opts...), nil
 }
 
-func NewWithConn(conn rwc, opts ...Option) *Client {
+func NewWithConn(conn io.ReadWriteCloser, opts ...Option) *Client {
 	cfg := config{
 		verifyMode: tlsconn.VerifyServerCert,
 		maxTable:   4096,
