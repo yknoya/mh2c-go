@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 type PriorityFrame struct {
 	StreamID  uint32
@@ -18,13 +22,8 @@ func (f PriorityFrame) Payload() []byte {
 	if f.Exclusive {
 		dep |= 0x8000_0000
 	}
-	return []byte{
-		byte(dep >> 24),
-		byte(dep >> 16),
-		byte(dep >> 8),
-		byte(dep),
-		f.Weight,
-	}
+	payload := wire.AppendUint32(nil, dep)
+	return append(payload, f.Weight)
 }
 
 func (f PriorityFrame) MarshalBinary() ([]byte, error) {
@@ -39,7 +38,10 @@ func parsePriorityFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload) != 5 {
 		return nil, fmt.Errorf("PRIORITY payload must be 5 bytes, got %d", len(payload))
 	}
-	dep := uint32(payload[0])<<24 | uint32(payload[1])<<16 | uint32(payload[2])<<8 | uint32(payload[3])
+	dep, err := wire.ReadUint32(payload[:4])
+	if err != nil {
+		return nil, err
+	}
 	return PriorityFrame{
 		StreamID:  header.StreamID,
 		Exclusive: dep&0x8000_0000 != 0,

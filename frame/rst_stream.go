@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 type RSTStreamFrame struct {
 	StreamID  uint32
@@ -12,8 +16,7 @@ func (f RSTStreamFrame) Header() Header {
 }
 
 func (f RSTStreamFrame) Payload() []byte {
-	code := uint32(f.ErrorCode)
-	return []byte{byte(code >> 24), byte(code >> 16), byte(code >> 8), byte(code)}
+	return wire.AppendUint32(nil, uint32(f.ErrorCode))
 }
 
 func (f RSTStreamFrame) MarshalBinary() ([]byte, error) {
@@ -28,6 +31,9 @@ func parseRSTStreamFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload) != 4 {
 		return nil, fmt.Errorf("RST_STREAM payload must be 4 bytes")
 	}
-	code := uint32(payload[0])<<24 | uint32(payload[1])<<16 | uint32(payload[2])<<8 | uint32(payload[3])
+	code, err := wire.ReadUint32(payload)
+	if err != nil {
+		return nil, err
+	}
 	return RSTStreamFrame{StreamID: header.StreamID, ErrorCode: ErrorCode(code)}, nil
 }

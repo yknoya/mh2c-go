@@ -7,6 +7,19 @@ import (
 
 const FrameHeaderLength = 9
 
+func AppendUint16(dst []byte, v uint16) []byte {
+	var buf [2]byte
+	binary.BigEndian.PutUint16(buf[:], v)
+	return append(dst, buf[:]...)
+}
+
+func ReadUint16(src []byte) (uint16, error) {
+	if len(src) < 2 {
+		return 0, fmt.Errorf("uint16 requires 2 bytes, got %d", len(src))
+	}
+	return binary.BigEndian.Uint16(src), nil
+}
+
 func AppendUint24(dst []byte, v uint32) ([]byte, error) {
 	if v > 0x00ff_ffff {
 		return dst, fmt.Errorf("uint24 overflow: %d", v)

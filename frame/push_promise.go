@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 const (
 	FlagPushPromiseEndHeaders uint8 = 0x4
@@ -25,7 +29,7 @@ func (f PushPromiseFrame) Payload() []byte {
 		payload = append(payload, f.PadLength)
 	}
 	promised := f.PromisedStreamID & 0x7fff_ffff
-	payload = append(payload, byte(promised>>24), byte(promised>>16), byte(promised>>8), byte(promised))
+	payload = wire.AppendUint32(payload, promised)
 	payload = append(payload, f.BlockFragment...)
 	if f.Flags&FlagPushPromisePadded != 0 {
 		payload = append(payload, make([]byte, int(f.PadLength))...)
@@ -54,7 +58,11 @@ func parsePushPromiseFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload) < offset+4 {
 		return nil, fmt.Errorf("PUSH_PROMISE frame too short")
 	}
-	frame.PromisedStreamID = uint32(payload[offset])<<24 | uint32(payload[offset+1])<<16 | uint32(payload[offset+2])<<8 | uint32(payload[offset+3])
+	promised, err := wire.ReadUint32(payload[offset : offset+4])
+	if err != nil {
+		return nil, err
+	}
+	frame.PromisedStreamID = promised
 	frame.PromisedStreamID &= 0x7fff_ffff
 	offset += 4
 	if len(payload) < offset+int(frame.PadLength) {

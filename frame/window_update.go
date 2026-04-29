@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 type WindowUpdateFrame struct {
 	StreamID  uint32
@@ -13,7 +17,7 @@ func (f WindowUpdateFrame) Header() Header {
 
 func (f WindowUpdateFrame) Payload() []byte {
 	incr := f.Increment & 0x7fff_ffff
-	return []byte{byte(incr >> 24), byte(incr >> 16), byte(incr >> 8), byte(incr)}
+	return wire.AppendUint32(nil, incr)
 }
 
 func (f WindowUpdateFrame) MarshalBinary() ([]byte, error) {
@@ -28,6 +32,9 @@ func parseWindowUpdateFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload) != 4 {
 		return nil, fmt.Errorf("WINDOW_UPDATE payload must be 4 bytes")
 	}
-	incr := uint32(payload[0])<<24 | uint32(payload[1])<<16 | uint32(payload[2])<<8 | uint32(payload[3])
+	incr, err := wire.ReadUint32(payload)
+	if err != nil {
+		return nil, err
+	}
 	return WindowUpdateFrame{StreamID: header.StreamID, Increment: incr & 0x7fff_ffff}, nil
 }

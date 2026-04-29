@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 const FlagSettingsAck uint8 = 0x1
 
@@ -32,8 +36,8 @@ func (f SettingsFrame) Header() Header {
 func (f SettingsFrame) Payload() []byte {
 	payload := make([]byte, 0, len(f.Settings)*6)
 	for _, s := range f.Settings {
-		payload = append(payload, byte(s.ID>>8), byte(s.ID))
-		payload = append(payload, byte(s.Value>>24), byte(s.Value>>16), byte(s.Value>>8), byte(s.Value))
+		payload = wire.AppendUint16(payload, uint16(s.ID))
+		payload = wire.AppendUint32(payload, s.Value)
 	}
 	return payload
 }
@@ -52,9 +56,17 @@ func parseSettingsFrame(header Header, payload []byte) (Frame, error) {
 	}
 	frame := SettingsFrame{Flags: header.Flags}
 	for i := 0; i < len(payload); i += 6 {
+		id, err := wire.ReadUint16(payload[i : i+2])
+		if err != nil {
+			return nil, err
+		}
+		value, err := wire.ReadUint32(payload[i+2 : i+6])
+		if err != nil {
+			return nil, err
+		}
 		frame.Settings = append(frame.Settings, Setting{
-			ID:    SettingID(uint16(payload[i])<<8 | uint16(payload[i+1])),
-			Value: uint32(payload[i+2])<<24 | uint32(payload[i+3])<<16 | uint32(payload[i+4])<<8 | uint32(payload[i+5]),
+			ID:    SettingID(id),
+			Value: value,
 		})
 	}
 	return frame, nil

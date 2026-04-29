@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 type ErrorCode uint32
 
@@ -21,9 +25,8 @@ func (f GoAwayFrame) Header() Header {
 func (f GoAwayFrame) Payload() []byte {
 	payload := make([]byte, 0, 8+len(f.DebugData))
 	last := f.LastStreamID & 0x7fff_ffff
-	payload = append(payload, byte(last>>24), byte(last>>16), byte(last>>8), byte(last))
-	code := uint32(f.ErrorCode)
-	payload = append(payload, byte(code>>24), byte(code>>16), byte(code>>8), byte(code))
+	payload = wire.AppendUint32(payload, last)
+	payload = wire.AppendUint32(payload, uint32(f.ErrorCode))
 	payload = append(payload, f.DebugData...)
 	return payload
 }
@@ -40,8 +43,14 @@ func parseGoAwayFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload) < 8 {
 		return nil, fmt.Errorf("GOAWAY payload must be at least 8 bytes")
 	}
-	last := uint32(payload[0])<<24 | uint32(payload[1])<<16 | uint32(payload[2])<<8 | uint32(payload[3])
-	code := uint32(payload[4])<<24 | uint32(payload[5])<<16 | uint32(payload[6])<<8 | uint32(payload[7])
+	last, err := wire.ReadUint32(payload[:4])
+	if err != nil {
+		return nil, err
+	}
+	code, err := wire.ReadUint32(payload[4:8])
+	if err != nil {
+		return nil, err
+	}
 	return GoAwayFrame{
 		LastStreamID: last & 0x7fff_ffff,
 		ErrorCode:    ErrorCode(code),

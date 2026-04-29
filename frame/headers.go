@@ -1,6 +1,10 @@
 package frame
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
+)
 
 const (
 	FlagHeadersEndStream  uint8 = 0x1
@@ -40,7 +44,7 @@ func (f HeadersFrame) Payload() []byte {
 				dep |= 0x8000_0000
 			}
 		}
-		payload = append(payload, byte(dep>>24), byte(dep>>16), byte(dep>>8), byte(dep))
+		payload = wire.AppendUint32(payload, dep)
 		if f.Priority != nil {
 			payload = append(payload, f.Priority.Weight)
 		} else {
@@ -76,7 +80,10 @@ func parseHeadersFrame(header Header, payload []byte) (Frame, error) {
 		if len(payload) < offset+5 {
 			return nil, fmt.Errorf("priority HEADERS frame too short")
 		}
-		dep := uint32(payload[offset])<<24 | uint32(payload[offset+1])<<16 | uint32(payload[offset+2])<<8 | uint32(payload[offset+3])
+		dep, err := wire.ReadUint32(payload[offset : offset+4])
+		if err != nil {
+			return nil, err
+		}
 		frame.Priority = &PriorityParam{
 			Exclusive: dep&0x8000_0000 != 0,
 			StreamDep: dep & 0x7fff_ffff,
