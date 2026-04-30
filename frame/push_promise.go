@@ -11,6 +11,11 @@ const (
 	FlagPushPromisePadded     uint8 = 0x8
 )
 
+const (
+	pushPromisePadLengthFieldLength = 1
+	pushPromiseStreamIDLength       = 4
+)
+
 type PushPromiseFrame struct {
 	StreamID         uint32
 	Flags            uint8
@@ -24,7 +29,7 @@ func (f PushPromiseFrame) Header() Header {
 }
 
 func (f PushPromiseFrame) Payload() []byte {
-	payload := make([]byte, 0, len(f.BlockFragment)+5)
+	payload := make([]byte, 0, len(f.BlockFragment)+pushPromisePadLengthFieldLength+pushPromiseStreamIDLength)
 	if f.Flags&FlagPushPromisePadded != 0 {
 		payload = append(payload, f.PadLength)
 	}
@@ -53,18 +58,18 @@ func parsePushPromiseFrame(header Header, payload []byte) (Frame, error) {
 			return nil, fmt.Errorf("padded PUSH_PROMISE frame missing pad length")
 		}
 		frame.PadLength = payload[0]
-		offset++
+		offset += pushPromisePadLengthFieldLength
 	}
-	if len(payload) < offset+4 {
+	if len(payload) < offset+pushPromiseStreamIDLength {
 		return nil, fmt.Errorf("PUSH_PROMISE frame too short")
 	}
-	promised, err := wire.ReadUint32(payload[offset : offset+4])
+	promised, err := wire.ReadUint32(payload[offset : offset+pushPromiseStreamIDLength])
 	if err != nil {
 		return nil, err
 	}
 	frame.PromisedStreamID = promised
 	frame.PromisedStreamID &= 0x7fff_ffff
-	offset += 4
+	offset += pushPromiseStreamIDLength
 	if len(payload) < offset+int(frame.PadLength) {
 		return nil, fmt.Errorf("invalid PUSH_PROMISE padding")
 	}

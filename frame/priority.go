@@ -13,6 +13,12 @@ type PriorityFrame struct {
 	Weight    uint8
 }
 
+const (
+	priorityDepLength     = 4
+	priorityWeightLength  = 1
+	priorityPayloadLength = priorityDepLength + priorityWeightLength
+)
+
 func (f PriorityFrame) Header() Header {
 	return Header{Type: TypePriority, StreamID: f.StreamID}
 }
@@ -35,10 +41,10 @@ func (f PriorityFrame) String() string {
 }
 
 func parsePriorityFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload) != 5 {
-		return nil, fmt.Errorf("PRIORITY payload must be 5 bytes, got %d", len(payload))
+	if len(payload) != priorityPayloadLength {
+		return nil, fmt.Errorf("PRIORITY payload must be %d bytes, got %d", priorityPayloadLength, len(payload))
 	}
-	dep, err := wire.ReadUint32(payload[:4])
+	dep, err := wire.ReadUint32(payload[:priorityDepLength])
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +52,6 @@ func parsePriorityFrame(header Header, payload []byte) (Frame, error) {
 		StreamID:  header.StreamID,
 		Exclusive: dep&0x8000_0000 != 0,
 		StreamDep: dep & 0x7fff_ffff,
-		Weight:    payload[4],
+		Weight:    payload[priorityDepLength],
 	}, nil
 }

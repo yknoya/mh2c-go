@@ -13,6 +13,13 @@ const (
 	FlagHeadersPriority   uint8 = 0x20
 )
 
+const (
+	headersPadLengthFieldLength = 1
+	headersPriorityDepLength    = 4
+	headersPriorityWeightLength = 1
+	headersPriorityParamLength  = headersPriorityDepLength + headersPriorityWeightLength
+)
+
 type PriorityParam struct {
 	Exclusive bool
 	StreamDep uint32
@@ -32,7 +39,7 @@ func (f HeadersFrame) Header() Header {
 }
 
 func (f HeadersFrame) Payload() []byte {
-	payload := make([]byte, 0, len(f.BlockFragment)+6)
+	payload := make([]byte, 0, len(f.BlockFragment)+headersPadLengthFieldLength+headersPriorityParamLength)
 	if f.Flags&FlagHeadersPadded != 0 {
 		payload = append(payload, f.PadLength)
 	}
@@ -74,22 +81,22 @@ func parseHeadersFrame(header Header, payload []byte) (Frame, error) {
 			return nil, fmt.Errorf("padded HEADERS frame missing pad length")
 		}
 		frame.PadLength = payload[0]
-		offset++
+		offset += headersPadLengthFieldLength
 	}
 	if header.Flags&FlagHeadersPriority != 0 {
-		if len(payload) < offset+5 {
+		if len(payload) < offset+headersPriorityParamLength {
 			return nil, fmt.Errorf("priority HEADERS frame too short")
 		}
-		dep, err := wire.ReadUint32(payload[offset : offset+4])
+		dep, err := wire.ReadUint32(payload[offset : offset+headersPriorityDepLength])
 		if err != nil {
 			return nil, err
 		}
 		frame.Priority = &PriorityParam{
 			Exclusive: dep&0x8000_0000 != 0,
 			StreamDep: dep & 0x7fff_ffff,
-			Weight:    payload[offset+4],
+			Weight:    payload[offset+headersPriorityDepLength],
 		}
-		offset += 5
+		offset += headersPriorityParamLength
 	}
 	if len(payload) < offset+int(frame.PadLength) {
 		return nil, fmt.Errorf("invalid HEADERS padding")

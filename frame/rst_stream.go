@@ -11,6 +11,8 @@ type RSTStreamFrame struct {
 	ErrorCode ErrorCode
 }
 
+const rstStreamPayloadLength = 4
+
 func (f RSTStreamFrame) Header() Header {
 	return Header{Type: TypeRSTStream, StreamID: f.StreamID}
 }
@@ -28,8 +30,8 @@ func (f RSTStreamFrame) String() string {
 }
 
 func parseRSTStreamFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload) != 4 {
-		return nil, fmt.Errorf("RST_STREAM payload must be 4 bytes")
+	if len(payload) != rstStreamPayloadLength {
+		return nil, fmt.Errorf("RST_STREAM payload must be %d bytes", rstStreamPayloadLength)
 	}
 	code, err := wire.ReadUint32(payload)
 	if err != nil {

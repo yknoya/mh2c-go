@@ -12,6 +12,12 @@ const (
 	ErrNo ErrorCode = 0x0
 )
 
+const (
+	goAwayLastStreamIDLength = 4
+	goAwayErrorCodeLength    = 4
+	goAwayMinPayloadLength   = goAwayLastStreamIDLength + goAwayErrorCodeLength
+)
+
 type GoAwayFrame struct {
 	LastStreamID uint32
 	ErrorCode    ErrorCode
@@ -23,7 +29,7 @@ func (f GoAwayFrame) Header() Header {
 }
 
 func (f GoAwayFrame) Payload() []byte {
-	payload := make([]byte, 0, 8+len(f.DebugData))
+	payload := make([]byte, 0, goAwayMinPayloadLength+len(f.DebugData))
 	last := f.LastStreamID & 0x7fff_ffff
 	payload = wire.AppendUint32(payload, last)
 	payload = wire.AppendUint32(payload, uint32(f.ErrorCode))
@@ -40,20 +46,21 @@ func (f GoAwayFrame) String() string {
 }
 
 func parseGoAwayFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload) < 8 {
-		return nil, fmt.Errorf("GOAWAY payload must be at least 8 bytes")
+	if len(payload) < goAwayMinPayloadLength {
+		return nil, fmt.Errorf("GOAWAY payload must be at least %d bytes", goAwayMinPayloadLength)
 	}
-	last, err := wire.ReadUint32(payload[:4])
+	last, err := wire.ReadUint32(payload[:goAwayLastStreamIDLength])
 	if err != nil {
 		return nil, err
 	}
-	code, err := wire.ReadUint32(payload[4:8])
+	codeStart := goAwayLastStreamIDLength
+	code, err := wire.ReadUint32(payload[codeStart : codeStart+goAwayErrorCodeLength])
 	if err != nil {
 		return nil, err
 	}
 	return GoAwayFrame{
 		LastStreamID: last & 0x7fff_ffff,
 		ErrorCode:    ErrorCode(code),
-		DebugData:    append([]byte(nil), payload[8:]...),
+		DebugData:    append([]byte(nil), payload[goAwayMinPayloadLength:]...),
 	}, nil
 }

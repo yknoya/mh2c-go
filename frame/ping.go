@@ -4,9 +4,11 @@ import "fmt"
 
 const FlagPingAck uint8 = 0x1
 
+const pingPayloadLength = 8
+
 type PingFrame struct {
 	Flags uint8
-	Data  [8]byte
+	Data  [pingPayloadLength]byte
 }
 
 func (f PingFrame) Header() Header {
@@ -26,10 +28,10 @@ func (f PingFrame) String() string {
 }
 
 func parsePingFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload) != 8 {
-		return nil, fmt.Errorf("PING payload must be 8 bytes")
+	if len(payload) != pingPayloadLength {
+		return nil, fmt.Errorf("PING payload must be %d bytes", pingPayloadLength)
 	}
-	var data [8]byte
+	var data [pingPayloadLength]byte
 	copy(data[:], payload)
 	return PingFrame{Flags: header.Flags, Data: data}, nil
 }

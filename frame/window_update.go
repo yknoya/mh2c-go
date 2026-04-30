@@ -11,6 +11,8 @@ type WindowUpdateFrame struct {
 	Increment uint32
 }
 
+const windowUpdatePayloadLength = 4
+
 func (f WindowUpdateFrame) Header() Header {
 	return Header{Type: TypeWindowUpdate, StreamID: f.StreamID}
 }
@@ -29,8 +31,8 @@ func (f WindowUpdateFrame) String() string {
 }
 
 func parseWindowUpdateFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload) != 4 {
-		return nil, fmt.Errorf("WINDOW_UPDATE payload must be 4 bytes")
+	if len(payload) != windowUpdatePayloadLength {
+		return nil, fmt.Errorf("WINDOW_UPDATE payload must be %d bytes", windowUpdatePayloadLength)
 	}
 	incr, err := wire.ReadUint32(payload)
 	if err != nil {

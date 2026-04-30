@@ -9,6 +9,13 @@ import (
 type Type uint8
 
 const (
+	frameHeaderLengthFieldLength = 3
+	frameHeaderTypeOffset        = 3
+	frameHeaderFlagsOffset       = 4
+	frameHeaderStreamIDOffset    = 5
+)
+
+const (
 	TypeData         Type = 0x0
 	TypeHeaders      Type = 0x1
 	TypePriority     Type = 0x2
@@ -44,18 +51,18 @@ func ParseHeader(src []byte) (Header, error) {
 	if len(src) != wire.FrameHeaderLength {
 		return Header{}, fmt.Errorf("frame header requires %d bytes, got %d", wire.FrameHeaderLength, len(src))
 	}
-	length, err := wire.ReadUint24(src[:3])
+	length, err := wire.ReadUint24(src[:frameHeaderLengthFieldLength])
 	if err != nil {
 		return Header{}, err
 	}
-	streamID, err := wire.ReadUint32(src[5:9])
+	streamID, err := wire.ReadUint32(src[frameHeaderStreamIDOffset:wire.FrameHeaderLength])
 	if err != nil {
 		return Header{}, err
 	}
 	return Header{
 		Length:   length,
-		Type:     Type(src[3]),
-		Flags:    src[4],
+		Type:     Type(src[frameHeaderTypeOffset]),
+		Flags:    src[frameHeaderFlagsOffset],
 		StreamID: streamID & 0x7fff_ffff,
 	}, nil
 }

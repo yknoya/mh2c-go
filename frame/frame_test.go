@@ -3,6 +3,8 @@ package frame
 import (
 	"bytes"
 	"testing"
+
+	"github.com/yknoya/mh2c-go/internal/wire"
 )
 
 func TestHeaderRoundTrip(t *testing.T) {
@@ -35,11 +37,11 @@ func TestSettingsFrameRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
 	}
-	header, err := ParseHeader(raw[:9])
+	header, err := ParseHeader(raw[:wire.FrameHeaderLength])
 	if err != nil {
 		t.Fatalf("ParseHeader() error = %v", err)
 	}
-	got, err := Unmarshal(header, raw[9:])
+	got, err := Unmarshal(header, raw[wire.FrameHeaderLength:])
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -65,11 +67,11 @@ func TestHeadersFrameRoundTripWithPriority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
 	}
-	header, err := ParseHeader(raw[:9])
+	header, err := ParseHeader(raw[:wire.FrameHeaderLength])
 	if err != nil {
 		t.Fatalf("ParseHeader() error = %v", err)
 	}
-	got, err := Unmarshal(header, raw[9:])
+	got, err := Unmarshal(header, raw[wire.FrameHeaderLength:])
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -98,11 +100,11 @@ func TestPriorityFrameRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
 	}
-	header, err := ParseHeader(raw[:9])
+	header, err := ParseHeader(raw[:wire.FrameHeaderLength])
 	if err != nil {
 		t.Fatalf("ParseHeader() error = %v", err)
 	}
-	got, err := Unmarshal(header, raw[9:])
+	got, err := Unmarshal(header, raw[wire.FrameHeaderLength:])
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -129,11 +131,11 @@ func TestPushPromiseFrameRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
 	}
-	header, err := ParseHeader(raw[:9])
+	header, err := ParseHeader(raw[:wire.FrameHeaderLength])
 	if err != nil {
 		t.Fatalf("ParseHeader() error = %v", err)
 	}
-	got, err := Unmarshal(header, raw[9:])
+	got, err := Unmarshal(header, raw[wire.FrameHeaderLength:])
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}

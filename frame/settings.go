@@ -8,6 +8,12 @@ import (
 
 const FlagSettingsAck uint8 = 0x1
 
+const (
+	settingIDLength    = 2
+	settingValueLength = 4
+	settingEntryLength = settingIDLength + settingValueLength
+)
+
 type SettingID uint16
 
 const (
@@ -34,7 +40,7 @@ func (f SettingsFrame) Header() Header {
 }
 
 func (f SettingsFrame) Payload() []byte {
-	payload := make([]byte, 0, len(f.Settings)*6)
+	payload := make([]byte, 0, len(f.Settings)*settingEntryLength)
 	for _, s := range f.Settings {
 		payload = wire.AppendUint16(payload, uint16(s.ID))
 		payload = wire.AppendUint32(payload, s.Value)
@@ -51,16 +57,17 @@ func (f SettingsFrame) String() string {
 }
 
 func parseSettingsFrame(header Header, payload []byte) (Frame, error) {
-	if len(payload)%6 != 0 {
-		return nil, fmt.Errorf("SETTINGS payload must be multiple of 6 bytes")
+	if len(payload)%settingEntryLength != 0 {
+		return nil, fmt.Errorf("SETTINGS payload must be multiple of %d bytes", settingEntryLength)
 	}
 	frame := SettingsFrame{Flags: header.Flags}
-	for i := 0; i < len(payload); i += 6 {
-		id, err := wire.ReadUint16(payload[i : i+2])
+	for i := 0; i < len(payload); i += settingEntryLength {
+		id, err := wire.ReadUint16(payload[i : i+settingIDLength])
 		if err != nil {
 			return nil, err
 		}
-		value, err := wire.ReadUint32(payload[i+2 : i+6])
+		valueStart := i + settingIDLength
+		value, err := wire.ReadUint32(payload[valueStart : valueStart+settingValueLength])
 		if err != nil {
 			return nil, err
 		}

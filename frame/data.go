@@ -7,6 +7,8 @@ const (
 	FlagDataPadded    uint8 = 0x8
 )
 
+const dataPadLengthFieldLength = 1
+
 type DataFrame struct {
 	StreamID  uint32
 	Flags     uint8
@@ -19,7 +21,7 @@ func (f DataFrame) Header() Header {
 }
 
 func (f DataFrame) Payload() []byte {
-	payload := make([]byte, 0, len(f.Data)+1)
+	payload := make([]byte, 0, len(f.Data)+dataPadLengthFieldLength)
 	if f.Flags&FlagDataPadded != 0 {
 		payload = append(payload, f.PadLength)
 	}
@@ -46,7 +48,7 @@ func parseDataFrame(header Header, payload []byte) (Frame, error) {
 			return nil, fmt.Errorf("padded DATA frame missing pad length")
 		}
 		frame.PadLength = payload[0]
-		offset++
+		offset += dataPadLengthFieldLength
 	}
 	if len(payload) < offset+int(frame.PadLength) {
 		return nil, fmt.Errorf("invalid DATA padding")
