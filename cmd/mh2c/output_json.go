@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/yknoya/mh2c-go/client"
 	"github.com/yknoya/mh2c-go/frame"
 	"github.com/yknoya/mh2c-go/hpack"
+	"github.com/yknoya/mh2c-go/internal/framefmt"
 )
 
 type jsonHeaderField struct {
@@ -35,7 +35,7 @@ func (o *outputController) buildJSONEvent(direction string, f frame.Frame, heade
 		FrameType: frameTypeName(f),
 		StreamID:  f.Header().StreamID,
 		Flags:     f.Header().Flags,
-		Summary:   client.DebugFrameString(f),
+		Summary:   framefmt.Summary(f),
 	}
 
 	if payload, ok := payloadHexForJSON(f, o.showHeaderBlock); ok {
