@@ -37,7 +37,7 @@ func (f PriorityFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f PriorityFrame) String() string {
-	return fmt.Sprintf("PRIORITY stream=%d dep=%d exclusive=%t weight=%d", f.StreamID, f.StreamDep, f.Exclusive, f.Weight)
+	return fmt.Sprintf("PRIORITY %s dep=%d exclusive=%t weight=%d", frameHeader(f), f.StreamDep, f.Exclusive, f.Weight)
 }
 
 func parsePriorityFrame(header Header, payload []byte) (Frame, error) {

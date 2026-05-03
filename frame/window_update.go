@@ -27,7 +27,7 @@ func (f WindowUpdateFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f WindowUpdateFrame) String() string {
-	return fmt.Sprintf("WINDOW_UPDATE stream=%d increment=%d", f.StreamID, f.Increment)
+	return fmt.Sprintf("WINDOW_UPDATE %s increment=%d", frameHeader(f), f.Increment)
 }
 
 func parseWindowUpdateFrame(header Header, payload []byte) (Frame, error) {

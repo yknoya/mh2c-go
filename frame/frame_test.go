@@ -2,6 +2,7 @@ package frame
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/yknoya/mh2c-go/internal/wire"
@@ -165,5 +166,38 @@ func TestUnknownFrameBecomesRawFrame(t *testing.T) {
 	}
 	if raw.Header().Type != Type(0xfe) {
 		t.Fatalf("Type = 0x%02x, want 0xfe", raw.Header().Type)
+	}
+}
+
+func TestFrameStringIncludesHeaderAndSemantics(t *testing.T) {
+	t.Parallel()
+
+	settings := SettingsFrame{
+		Settings: []Setting{
+			{ID: SettingHeaderTableSize, Value: 4096},
+			{ID: SettingEnablePush, Value: 0},
+		},
+	}
+	for _, want := range []string{
+		"SETTINGS stream=0",
+		"len=12",
+		"type=SETTINGS(0x04)",
+		"settings=[HEADER_TABLE_SIZE=4096 ENABLE_PUSH=0]",
+	} {
+		if got := settings.String(); !strings.Contains(got, want) {
+			t.Fatalf("SettingsFrame.String() = %q, want %q", got, want)
+		}
+	}
+
+	data := DataFrame{StreamID: 1, Flags: FlagDataEndStream, Data: []byte("hello")}
+	for _, want := range []string{
+		"DATA stream=1",
+		"len=5",
+		"end_stream=true",
+		"data=5",
+	} {
+		if got := data.String(); !strings.Contains(got, want) {
+			t.Fatalf("DataFrame.String() = %q, want %q", got, want)
+		}
 	}
 }

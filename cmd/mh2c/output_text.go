@@ -21,7 +21,7 @@ func (o *outputController) writeTextFrame(prefix string, f frame.Frame, headers 
 			}
 		} else {
 			for _, setting := range typed.Settings {
-				if _, err := fmt.Fprintf(o.out, "  setting id=%s value=%d\n", settingName(setting.ID), setting.Value); err != nil {
+				if _, err := fmt.Fprintf(o.out, "  setting id=%s value=%d\n", setting.ID, setting.Value); err != nil {
 					return err
 				}
 			}

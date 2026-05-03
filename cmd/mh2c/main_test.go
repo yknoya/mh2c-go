@@ -281,10 +281,11 @@ func TestStartSessionDisplaysSentPrefaceAndSettings(t *testing.T) {
 	if !strings.Contains(text, ">> CONNECTION_PREFACE") {
 		t.Fatalf("output = %q, want sent preface", text)
 	}
-	if !strings.Contains(text, ">> SETTINGS flags=0x00 entries=3") {
+	if !strings.Contains(text, ">> SETTINGS stream=0 len=18 type=SETTINGS(0x04) flags=0x00") ||
+		!strings.Contains(text, "settings=[ENABLE_PUSH=0 INITIAL_WINDOW_SIZE=65535 HEADER_TABLE_SIZE=8192]") {
 		t.Fatalf("output = %q, want sent initial SETTINGS", text)
 	}
-	if !strings.Contains(text, ">> SETTINGS flags=0x01 entries=0") {
+	if !strings.Contains(text, ">> SETTINGS stream=0 len=0 type=SETTINGS(0x04) flags=0x01 ack=true") {
 		t.Fatalf("output = %q, want sent SETTINGS ack", text)
 	}
 }
@@ -321,7 +322,7 @@ func TestSendRequestDisplaysSentHeadersAndData(t *testing.T) {
 	if !strings.Contains(text, ">> HEADERS stream=1") {
 		t.Fatalf("output = %q, want sent HEADERS", text)
 	}
-	if !strings.Contains(text, ">> DATA stream=1 flags=0x01 len=5") {
+	if !strings.Contains(text, ">> DATA stream=1 len=5 type=DATA(0x00) flags=0x01 end_stream=true data=5") {
 		t.Fatalf("output = %q, want sent DATA", text)
 	}
 	if !strings.Contains(text, "data-text: \"hello\"") {

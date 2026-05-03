@@ -37,7 +37,7 @@ func (f DataFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f DataFrame) String() string {
-	return fmt.Sprintf("DATA stream=%d flags=0x%02x len=%d", f.StreamID, f.Flags, len(f.Data))
+	return fmt.Sprintf("DATA %s end_stream=%t data=%d pad=%d", frameHeader(f), f.Flags&FlagDataEndStream != 0, len(f.Data), f.PadLength)
 }
 
 func parseDataFrame(header Header, payload []byte) (Frame, error) {

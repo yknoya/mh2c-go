@@ -28,11 +28,42 @@ const (
 	TypeContinuation Type = 0x9
 )
 
+func (t Type) String() string {
+	switch t {
+	case TypeData:
+		return "DATA"
+	case TypeHeaders:
+		return "HEADERS"
+	case TypePriority:
+		return "PRIORITY"
+	case TypeRSTStream:
+		return "RST_STREAM"
+	case TypeSettings:
+		return "SETTINGS"
+	case TypePushPromise:
+		return "PUSH_PROMISE"
+	case TypePing:
+		return "PING"
+	case TypeGoAway:
+		return "GOAWAY"
+	case TypeWindowUpdate:
+		return "WINDOW_UPDATE"
+	case TypeContinuation:
+		return "CONTINUATION"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 type Header struct {
 	Length   uint32
 	Type     Type
 	Flags    uint8
 	StreamID uint32
+}
+
+func (h Header) String() string {
+	return fmt.Sprintf("stream=%d len=%d type=%s(0x%02x) flags=0x%02x", h.StreamID, h.Length, h.Type, uint8(h.Type), h.Flags)
 }
 
 func (h Header) MarshalBinary() ([]byte, error) {
@@ -71,6 +102,12 @@ type Frame interface {
 	Header() Header
 	Payload() []byte
 	MarshalBinary() ([]byte, error)
+}
+
+func frameHeader(f Frame) Header {
+	header := f.Header()
+	header.Length = uint32(len(f.Payload()))
+	return header
 }
 
 func Marshal(f Frame) ([]byte, error) {

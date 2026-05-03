@@ -47,7 +47,14 @@ func (f PushPromiseFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f PushPromiseFrame) String() string {
-	return fmt.Sprintf("PUSH_PROMISE stream=%d promised=%d flags=0x%02x block=%d", f.StreamID, f.PromisedStreamID, f.Flags, len(f.BlockFragment))
+	return fmt.Sprintf(
+		"PUSH_PROMISE %s end_headers=%t promised=%d block=%d pad=%d",
+		frameHeader(f),
+		f.Flags&FlagPushPromiseEndHeaders != 0,
+		f.PromisedStreamID,
+		len(f.BlockFragment),
+		f.PadLength,
+	)
 }
 
 func parsePushPromiseFrame(header Header, payload []byte) (Frame, error) {

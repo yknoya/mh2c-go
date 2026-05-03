@@ -12,6 +12,15 @@ const (
 	ErrNo ErrorCode = 0x0
 )
 
+func (c ErrorCode) String() string {
+	switch c {
+	case ErrNo:
+		return "NO_ERROR(0x00000000)"
+	default:
+		return fmt.Sprintf("0x%08x", uint32(c))
+	}
+}
+
 const (
 	goAwayLastStreamIDLength = 4
 	goAwayErrorCodeLength    = 4
@@ -42,7 +51,7 @@ func (f GoAwayFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f GoAwayFrame) String() string {
-	return fmt.Sprintf("GOAWAY last_stream=%d error=0x%08x debug=%d", f.LastStreamID, uint32(f.ErrorCode), len(f.DebugData))
+	return fmt.Sprintf("GOAWAY %s last_stream=%d error=%s debug=%d", frameHeader(f), f.LastStreamID, f.ErrorCode, len(f.DebugData))
 }
 
 func parseGoAwayFrame(header Header, payload []byte) (Frame, error) {

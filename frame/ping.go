@@ -24,7 +24,7 @@ func (f PingFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f PingFrame) String() string {
-	return fmt.Sprintf("PING flags=0x%02x", f.Flags)
+	return fmt.Sprintf("PING %s ack=%t data=%x", frameHeader(f), f.Flags&FlagPingAck != 0, f.Data)
 }
 
 func parsePingFrame(header Header, payload []byte) (Frame, error) {

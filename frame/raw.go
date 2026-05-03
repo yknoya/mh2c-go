@@ -1,5 +1,7 @@
 package frame
 
+import "fmt"
+
 type RawFrame struct {
 	header  Header
 	payload []byte
@@ -21,4 +23,8 @@ func (f RawFrame) Payload() []byte {
 
 func (f RawFrame) MarshalBinary() ([]byte, error) {
 	return encode(f.header, f.payload)
+}
+
+func (f RawFrame) String() string {
+	return fmt.Sprintf("RAW %s payload=%d", frameHeader(f), len(f.payload))
 }

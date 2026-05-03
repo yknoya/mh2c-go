@@ -355,7 +355,8 @@ func TestOutputControllerFiltersPushPromiseAndRawFrames(t *testing.T) {
 	}
 
 	text := out.String()
-	if !strings.Contains(text, "PUSH_PROMISE stream=1 promised=2") {
+	if !strings.Contains(text, "PUSH_PROMISE stream=1 len=5 type=PUSH_PROMISE(0x05) flags=0x04") ||
+		!strings.Contains(text, "promised=2") {
 		t.Fatalf("output = %q, want PUSH_PROMISE", text)
 	}
 	if !strings.Contains(text, "promised-stream-id: 2") {

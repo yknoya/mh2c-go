@@ -170,22 +170,3 @@ func parsePingData(src string) ([8]byte, error) {
 	copy(payload[:], src)
 	return payload, nil
 }
-
-func settingName(id frame.SettingID) string {
-	switch id {
-	case frame.SettingHeaderTableSize:
-		return "HEADER_TABLE_SIZE"
-	case frame.SettingEnablePush:
-		return "ENABLE_PUSH"
-	case frame.SettingMaxConcurrentStreams:
-		return "MAX_CONCURRENT_STREAMS"
-	case frame.SettingInitialWindowSize:
-		return "INITIAL_WINDOW_SIZE"
-	case frame.SettingMaxFrameSize:
-		return "MAX_FRAME_SIZE"
-	case frame.SettingMaxHeaderListSize:
-		return "MAX_HEADER_LIST_SIZE"
-	default:
-		return fmt.Sprintf("0x%04x", uint16(id))
-	}
-}

@@ -2,6 +2,7 @@ package frame
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/yknoya/mh2c-go/internal/wire"
 )
@@ -24,6 +25,25 @@ const (
 	SettingMaxFrameSize         SettingID = 0x5
 	SettingMaxHeaderListSize    SettingID = 0x6
 )
+
+func (id SettingID) String() string {
+	switch id {
+	case SettingHeaderTableSize:
+		return "HEADER_TABLE_SIZE"
+	case SettingEnablePush:
+		return "ENABLE_PUSH"
+	case SettingMaxConcurrentStreams:
+		return "MAX_CONCURRENT_STREAMS"
+	case SettingInitialWindowSize:
+		return "INITIAL_WINDOW_SIZE"
+	case SettingMaxFrameSize:
+		return "MAX_FRAME_SIZE"
+	case SettingMaxHeaderListSize:
+		return "MAX_HEADER_LIST_SIZE"
+	default:
+		return fmt.Sprintf("0x%04x", uint16(id))
+	}
+}
 
 type Setting struct {
 	ID    SettingID
@@ -53,7 +73,11 @@ func (f SettingsFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f SettingsFrame) String() string {
-	return fmt.Sprintf("SETTINGS flags=0x%02x entries=%d", f.Flags, len(f.Settings))
+	settings := make([]string, 0, len(f.Settings))
+	for _, setting := range f.Settings {
+		settings = append(settings, fmt.Sprintf("%s=%d", setting.ID, setting.Value))
+	}
+	return fmt.Sprintf("SETTINGS %s ack=%t settings=[%s]", frameHeader(f), f.Flags&FlagSettingsAck != 0, strings.Join(settings, " "))
 }
 
 func parseSettingsFrame(header Header, payload []byte) (Frame, error) {

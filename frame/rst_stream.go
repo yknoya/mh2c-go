@@ -26,7 +26,7 @@ func (f RSTStreamFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f RSTStreamFrame) String() string {
-	return fmt.Sprintf("RST_STREAM stream=%d error=0x%08x", f.StreamID, uint32(f.ErrorCode))
+	return fmt.Sprintf("RST_STREAM %s error=%s", frameHeader(f), f.ErrorCode)
 }
 
 func parseRSTStreamFrame(header Header, payload []byte) (Frame, error) {
