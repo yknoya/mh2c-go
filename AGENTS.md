@@ -10,6 +10,7 @@ to the package they affect.
 - `frame/`: HTTP/2 frame types, binary encoding/decoding, frame unit tests
 - `hpack/`: thin wrappers around `golang.org/x/net/http2/hpack`; do not vendor or copy HPACK implementation code here
 - `tlsconn/`: TLS + ALPN `h2` bootstrap
+- `internal/framefmt/`: reusable frame text formatting helpers shared by CLI output code
 - `internal/wire/`: low-level wire helpers shared by packages
 
 Tests live next to the code as `*_test.go`.
@@ -24,7 +25,7 @@ Use the `Makefile` for the common path, or run Go commands directly.
 - `make test`: run the full test suite with `go test ./...`
 - `make fmt`: format all Go packages with `go fmt ./...`
 - `./bin/mh2c --help`: inspect CLI options locally after `make build-cli`
-- `./bin/mh2c --mode script --script-file ./request.toml`: run a scripted frame sequence
+- `./bin/mh2c script run --script-file ./request.toml`: run a scripted frame sequence
 - `go run ./cmd/mh2c ...`: use for ad-hoc execution when you do not want to produce a local binary
 
 Run `make fmt` and `make test` before opening a PR.
@@ -39,6 +40,11 @@ formats them. Package names stay short and lowercase (`frame`, `client`,
 Prefer small, protocol-focused changes. This project is a manual HTTP/2 client,
 not a high-level convenience client, so preserve frame-level visibility and
 explicit control in the CLI.
+
+Keep `frame.String()` as a concise semantic summary for the frame itself. Put
+formatting that depends on output settings, truncation, decoded headers, or
+warnings in `internal/framefmt` or the CLI output layer; keep HPACK state
+orchestration out of formatter packages.
 
 Do not copy or vendor third-party implementation code into this repository.
 When protocol helpers are needed, use Go module dependencies and keep only thin
