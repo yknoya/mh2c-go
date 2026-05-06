@@ -103,11 +103,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 		t.Fatalf(":status = %q, want 200", fieldValue(result.headers, ":status"))
 	}
 
-	result, err = state.Consume(frame.DataFrame{
-		StreamID: 1,
-		Flags:    frame.FlagDataEndStream,
-		Data:     []byte("hello"),
-	}, codec.DecodeDetailed)
+	result, err = state.Consume(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")), codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(DATA) error = %v", err)
 	}

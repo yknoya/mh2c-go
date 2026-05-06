@@ -13,6 +13,10 @@ func RawFrameFromParts(header Header, payload []byte) RawFrame {
 	return RawFrame{header: header, payload: copied}
 }
 
+func RawFrameFromExactParts(header Header, payload []byte) RawFrame {
+	return RawFrame{header: header, payload: append([]byte(nil), payload...)}
+}
+
 func (f RawFrame) Header() Header {
 	return f.header
 }
@@ -22,9 +26,13 @@ func (f RawFrame) Payload() []byte {
 }
 
 func (f RawFrame) MarshalBinary() ([]byte, error) {
-	return encode(f.header, f.payload)
+	head, err := f.header.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return append(head, f.payload...), nil
 }
 
 func (f RawFrame) String() string {
-	return fmt.Sprintf("RAW %s payload=%d", frameHeader(f), len(f.payload))
+	return fmt.Sprintf("RAW %s payload=%d", f.header, len(f.payload))
 }

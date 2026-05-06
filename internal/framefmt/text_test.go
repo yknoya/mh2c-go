@@ -15,7 +15,7 @@ func TestWriteTextFrameIncludesFrameDetails(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTextFrame(&out, TextFrame{
 		Prefix:     "<<",
-		Frame:      frame.DataFrame{StreamID: 1, Flags: frame.FlagDataEndStream, Data: []byte("hello")},
+		Frame:      frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")),
 		DataFormat: DataFormatBoth,
 	})
 	if err != nil {

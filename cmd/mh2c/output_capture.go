@@ -58,7 +58,7 @@ func (o *outputController) captureReceived(streamID uint32, headers []hpack.Head
 			o.capture.RecordHeaders(streamID, headers, endStream)
 		}
 	case frame.DataFrame:
-		o.capture.RecordData(typed.StreamID, typed.Data, typed.Flags&frame.FlagDataEndStream != 0)
+		o.capture.RecordData(typed.Header().StreamID, typed.Data, typed.Header().Flags&frame.FlagDataEndStream != 0)
 	}
 }
 

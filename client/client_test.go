@@ -93,6 +93,44 @@ func TestSendRawFrame(t *testing.T) {
 	}
 }
 
+func TestSendRawFrameExactPreservesHeaderLength(t *testing.T) {
+	t.Parallel()
+
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+
+	c := NewWithConn(left)
+	payload := []byte{0xde, 0xad, 0xbe, 0xef}
+	header := frame.Header{
+		Type:     frame.Type(0xf0),
+		Flags:    0xaa,
+		StreamID: 5,
+		Length:   1,
+	}
+	done := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 9+len(payload))
+		_, _ = io.ReadFull(right, buf)
+		done <- buf
+	}()
+
+	if err := c.SendRawFrameExact(header, payload); err != nil {
+		t.Fatalf("SendRawFrameExact() error = %v", err)
+	}
+	got := <-done
+	gotHeader, err := frame.ParseHeader(got[:9])
+	if err != nil {
+		t.Fatalf("ParseHeader() error = %v", err)
+	}
+	if gotHeader.Length != 1 {
+		t.Fatalf("Header.Length = %d, want 1", gotHeader.Length)
+	}
+	if !bytes.Equal(got[9:], payload) {
+		t.Fatalf("payload = %x, want %x", got[9:], payload)
+	}
+}
+
 func TestRequestCodecStartsAtPeerDefaultHeaderTableSize(t *testing.T) {
 	t.Parallel()
 

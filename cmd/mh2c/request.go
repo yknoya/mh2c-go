@@ -100,9 +100,5 @@ func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField
 	if len(body) == 0 {
 		return nil
 	}
-	return sendFrameAndReport(h2c, out, frame.DataFrame{
-		StreamID: streamID,
-		Flags:    frame.FlagDataEndStream,
-		Data:     body,
-	})
+	return sendFrameAndReport(h2c, out, frame.NewDataFrame(streamID, frame.FlagDataEndStream, body))
 }

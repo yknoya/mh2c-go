@@ -33,16 +33,16 @@ func TestOutputControllerAppliesFrameStreamAndDirectionFilters(t *testing.T) {
 	}
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleSent(h2c, frame.DataFrame{StreamID: 1, Data: []byte("sent")}); err != nil {
+	if err := controller.HandleSent(h2c, frame.NewDataFrame(1, 0, []byte("sent"))); err != nil {
 		t.Fatalf("HandleSent(data stream=1) error = %v", err)
 	}
 	if err := controller.HandleReceived(h2c, frame.SettingsFrame{}); err != nil {
 		t.Fatalf("HandleReceived(settings) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.DataFrame{StreamID: 3, Data: []byte("skip")}); err != nil {
+	if err := controller.HandleReceived(h2c, frame.NewDataFrame(3, 0, []byte("skip"))); err != nil {
 		t.Fatalf("HandleReceived(data stream=3) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.DataFrame{StreamID: 1, Data: []byte("keep")}); err != nil {
+	if err := controller.HandleReceived(h2c, frame.NewDataFrame(1, 0, []byte("keep"))); err != nil {
 		t.Fatalf("HandleReceived(data stream=1) error = %v", err)
 	}
 
@@ -156,10 +156,7 @@ func TestOutputControllerJSONLMarksTruncatedDataTextSafely(t *testing.T) {
 	}
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleReceived(h2c, frame.DataFrame{
-		StreamID: 1,
-		Data:     []byte("あい"),
-	}); err != nil {
+	if err := controller.HandleReceived(h2c, frame.NewDataFrame(1, 0, []byte("あい"))); err != nil {
 		t.Fatalf("HandleReceived(data) error = %v", err)
 	}
 
@@ -285,11 +282,7 @@ func TestOutputControllerFlushesAutoCapturedResponse(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("HandleReceived(headers) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.DataFrame{
-		StreamID: 3,
-		Flags:    frame.FlagDataEndStream,
-		Data:     []byte("hello"),
-	}); err != nil {
+	if err := controller.HandleReceived(h2c, frame.NewDataFrame(3, frame.FlagDataEndStream, []byte("hello"))); err != nil {
 		t.Fatalf("HandleReceived(data) error = %v", err)
 	}
 	if err := controller.Flush(); err != nil {

@@ -169,6 +169,51 @@ func TestUnknownFrameBecomesRawFrame(t *testing.T) {
 	}
 }
 
+func TestRawFrameExactPartsPreserveHeaderLength(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte{0xde, 0xad, 0xbe, 0xef}
+	normalized := RawFrameFromParts(Header{Type: Type(0xfe), Flags: 0xaa, StreamID: 9, Length: 1}, payload)
+	if got := normalized.Header().Length; got != uint32(len(payload)) {
+		t.Fatalf("RawFrameFromParts length = %d, want %d", got, len(payload))
+	}
+
+	exact := RawFrameFromExactParts(Header{Type: Type(0xfe), Flags: 0xaa, StreamID: 9, Length: 1}, payload)
+	raw, err := exact.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary() error = %v", err)
+	}
+	header, err := ParseHeader(raw[:wire.FrameHeaderLength])
+	if err != nil {
+		t.Fatalf("ParseHeader() error = %v", err)
+	}
+	if header.Length != 1 {
+		t.Fatalf("Header.Length = %d, want 1", header.Length)
+	}
+	if !bytes.Equal(raw[wire.FrameHeaderLength:], payload) {
+		t.Fatalf("payload = %x, want %x", raw[wire.FrameHeaderLength:], payload)
+	}
+}
+
+func TestNewDataFrameCopiesDataAndSetsHeader(t *testing.T) {
+	t.Parallel()
+
+	data := []byte("hello")
+	got := NewDataFrame(3, FlagDataEndStream, data)
+	data[0] = 'H'
+
+	if got.FrameHeader.Type != TypeData || got.FrameHeader.Length != 5 {
+		t.Fatalf("FrameHeader = %#v", got.FrameHeader)
+	}
+	header := got.Header()
+	if header.Type != TypeData || header.StreamID != 3 || header.Flags != FlagDataEndStream {
+		t.Fatalf("Header() = %#v", header)
+	}
+	if string(got.Data) != "hello" {
+		t.Fatalf("Data = %q, want hello", got.Data)
+	}
+}
+
 func TestFrameStringIncludesHeaderAndSemantics(t *testing.T) {
 	t.Parallel()
 
@@ -189,7 +234,7 @@ func TestFrameStringIncludesHeaderAndSemantics(t *testing.T) {
 		}
 	}
 
-	data := DataFrame{StreamID: 1, Flags: FlagDataEndStream, Data: []byte("hello")}
+	data := NewDataFrame(1, FlagDataEndStream, []byte("hello"))
 	for _, want := range []string{
 		"DATA stream=1",
 		"len=5",

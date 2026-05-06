@@ -48,12 +48,12 @@ func (s *responseState) Consume(f frame.Frame, decode func([]byte) (hpack.Decode
 			return s.finishHeaderBlock(decode)
 		}
 	case frame.DataFrame:
-		if typed.StreamID != s.streamID {
+		if typed.Header().StreamID != s.streamID {
 			return consumeResult{}, nil
 		}
 		return consumeResult{
 			data: append([]byte(nil), typed.Data...),
-			done: typed.Flags&frame.FlagDataEndStream != 0,
+			done: typed.Header().Flags&frame.FlagDataEndStream != 0,
 		}, nil
 	case frame.GoAwayFrame:
 		return consumeResult{done: true}, nil

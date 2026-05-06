@@ -10,23 +10,32 @@ const (
 const dataPadLengthFieldLength = 1
 
 type DataFrame struct {
-	StreamID  uint32
-	Flags     uint8
-	PadLength uint8
-	Data      []byte
+	FrameHeader Header
+	PadLength   uint8
+	Data        []byte
+}
+
+// NewDataFrame builds a DATA frame from the ordinary stream metadata and data bytes.
+func NewDataFrame(streamID uint32, flags uint8, data []byte) DataFrame {
+	frame := DataFrame{
+		FrameHeader: Header{Type: TypeData, StreamID: streamID, Flags: flags},
+		Data:        append([]byte(nil), data...),
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
 }
 
 func (f DataFrame) Header() Header {
-	return Header{Type: TypeData, Flags: f.Flags, StreamID: f.StreamID}
+	return f.FrameHeader
 }
 
 func (f DataFrame) Payload() []byte {
 	payload := make([]byte, 0, len(f.Data)+dataPadLengthFieldLength)
-	if f.Flags&FlagDataPadded != 0 {
+	if f.Header().Flags&FlagDataPadded != 0 {
 		payload = append(payload, f.PadLength)
 	}
 	payload = append(payload, f.Data...)
-	if f.Flags&FlagDataPadded != 0 {
+	if f.Header().Flags&FlagDataPadded != 0 {
 		payload = append(payload, make([]byte, int(f.PadLength))...)
 	}
 	return payload
@@ -37,11 +46,11 @@ func (f DataFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f DataFrame) String() string {
-	return fmt.Sprintf("DATA %s end_stream=%t data=%d pad=%d", frameHeader(f), f.Flags&FlagDataEndStream != 0, len(f.Data), f.PadLength)
+	return fmt.Sprintf("DATA %s end_stream=%t data=%d pad=%d", frameHeader(f), f.Header().Flags&FlagDataEndStream != 0, len(f.Data), f.PadLength)
 }
 
 func parseDataFrame(header Header, payload []byte) (Frame, error) {
-	frame := DataFrame{StreamID: header.StreamID, Flags: header.Flags}
+	frame := DataFrame{FrameHeader: header}
 	offset := 0
 	if header.Flags&FlagDataPadded != 0 {
 		if len(payload) == 0 {

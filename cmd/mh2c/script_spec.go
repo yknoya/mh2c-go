@@ -148,8 +148,10 @@ var scriptActionSpecs = []scriptActionSpec{
 			{name: "frame_type", kind: scriptNumber, required: true},
 			{name: "stream_id", kind: scriptNumber, required: true},
 			{name: "flags", kind: scriptNumber, required: true},
+			{name: "length", kind: scriptNumber},
 			{name: "payload_hex", kind: scriptString, required: true},
 		},
+		notes: []string{"length is optional; when set, the raw frame header length is sent exactly as provided."},
 	},
 	{
 		name: "receive",
@@ -358,6 +360,9 @@ func validateScriptAction(spec scriptActionSpec, action scriptTable) error {
 			return err
 		} else if !ok || flags < 0 || flags > 0xff {
 			return fmt.Errorf("flags must be set to 0..255 for raw frames")
+		}
+		if _, _, err := action.optionalUint32("length"); err != nil {
+			return err
 		}
 		return validateHexField(action, "payload_hex")
 	case "receive":

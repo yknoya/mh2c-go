@@ -133,6 +133,30 @@ func TestBuildScriptFramePushPromiseWithBlockHex(t *testing.T) {
 	}
 }
 
+func TestBuildScriptFrameDataWithPaddingSetsHeaderLength(t *testing.T) {
+	t.Parallel()
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	got, err := buildScriptFrame(h2c, scriptTable{
+		"type":       {kind: scriptString, str: "data"},
+		"stream_id":  {kind: scriptNumber, number: 1},
+		"flags":      {kind: scriptStringList, list: []string{"PADDED"}},
+		"data":       {kind: scriptString, str: "hi"},
+		"pad_length": {kind: scriptNumber, number: 2},
+	})
+	if err != nil {
+		t.Fatalf("buildScriptFrame() error = %v", err)
+	}
+
+	typed, ok := got.(frame.DataFrame)
+	if !ok {
+		t.Fatalf("frame type = %T, want DataFrame", got)
+	}
+	if typed.FrameHeader.Type != frame.TypeData || typed.FrameHeader.Length != 5 {
+		t.Fatalf("FrameHeader = %#v", typed.FrameHeader)
+	}
+}
+
 func TestBuildScriptFrameRaw(t *testing.T) {
 	t.Parallel()
 
@@ -156,6 +180,38 @@ func TestBuildScriptFrameRaw(t *testing.T) {
 		t.Fatalf("RawFrame header = %#v", typed.Header())
 	}
 	if gotHex := hex.EncodeToString(typed.Payload()); gotHex != "deadbeef" {
+		t.Fatalf("payload = %s, want deadbeef", gotHex)
+	}
+}
+
+func TestBuildScriptFrameRawWithExactLength(t *testing.T) {
+	t.Parallel()
+
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	got, err := buildScriptFrame(h2c, scriptTable{
+		"type":        {kind: scriptString, str: "raw"},
+		"frame_type":  {kind: scriptNumber, number: 254},
+		"stream_id":   {kind: scriptNumber, number: 1},
+		"flags":       {kind: scriptNumber, number: 3},
+		"length":      {kind: scriptNumber, number: 1},
+		"payload_hex": {kind: scriptString, str: "deadbeef"},
+	})
+	if err != nil {
+		t.Fatalf("buildScriptFrame() error = %v", err)
+	}
+
+	raw, err := got.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary() error = %v", err)
+	}
+	header, err := frame.ParseHeader(raw[:9])
+	if err != nil {
+		t.Fatalf("ParseHeader() error = %v", err)
+	}
+	if header.Length != 1 {
+		t.Fatalf("Header.Length = %d, want 1", header.Length)
+	}
+	if gotHex := hex.EncodeToString(raw[9:]); gotHex != "deadbeef" {
 		t.Fatalf("payload = %s, want deadbeef", gotHex)
 	}
 }

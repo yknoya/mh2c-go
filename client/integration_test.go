@@ -91,11 +91,7 @@ func TestHTTP2RoundTripAgainstTLSServer(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SendFrame(HEADERS) error = %v", err)
 	}
-	if err := c.SendFrame(frame.DataFrame{
-		StreamID: 1,
-		Flags:    frame.FlagDataEndStream,
-		Data:     []byte("hello"),
-	}); err != nil {
+	if err := c.SendFrame(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello"))); err != nil {
 		t.Fatalf("SendFrame(DATA) error = %v", err)
 	}
 
@@ -192,11 +188,11 @@ func readResponse(t *testing.T, c *Client, streamID uint32) ([]hpack.HeaderField
 		case frame.ContinuationFrame:
 			return nil, nil, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.StreamID)
 		case frame.DataFrame:
-			if typed.StreamID != streamID {
+			if typed.Header().StreamID != streamID {
 				continue
 			}
 			body = append(body, typed.Data...)
-			if typed.Flags&frame.FlagDataEndStream != 0 {
+			if typed.Header().Flags&frame.FlagDataEndStream != 0 {
 				return fields, body, nil
 			}
 		}

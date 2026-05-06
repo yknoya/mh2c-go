@@ -102,7 +102,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 				return sawGoAway, nil
 			}
 		case frame.DataFrame:
-			if until == "end_stream" && hasStreamID && typed.StreamID == streamID && typed.Flags&frame.FlagDataEndStream != 0 {
+			if until == "end_stream" && hasStreamID && typed.Header().StreamID == streamID && typed.Header().Flags&frame.FlagDataEndStream != 0 {
 				return sawGoAway, nil
 			}
 		case frame.HeadersFrame:

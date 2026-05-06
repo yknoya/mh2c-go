@@ -94,13 +94,20 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		frameValue := frame.DataFrame{StreamID: streamID, Flags: flags, Data: data}
-		if padLength, ok, err := action.optionalUint8("pad_length"); err != nil {
+		padLength, hasPadLength, err := action.optionalUint8("pad_length")
+		if err != nil {
 			return nil, err
-		} else if ok {
-			frameValue.PadLength = padLength
 		}
-		return frameValue, nil
+		if hasPadLength {
+			frameValue := frame.DataFrame{
+				FrameHeader: frame.Header{Type: frame.TypeData, StreamID: streamID, Flags: flags},
+				PadLength:   padLength,
+				Data:        append([]byte(nil), data...),
+			}
+			frameValue.FrameHeader.Length = uint32(len(frameValue.Payload()))
+			return frameValue, nil
+		}
+		return frame.NewDataFrame(streamID, flags, data), nil
 	case "ping":
 		flags, err := parseFlags(action, pingFlagNames)
 		if err != nil {
@@ -213,11 +220,18 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.RawFrameFromParts(frame.Header{
+		header := frame.Header{
 			Type:     frame.Type(frameType),
 			Flags:    uint8(flags),
 			StreamID: streamID,
-		}, payload), nil
+		}
+		if length, ok, err := action.optionalUint32("length"); err != nil {
+			return nil, err
+		} else if ok {
+			header.Length = length
+			return frame.RawFrameFromExactParts(header, payload), nil
+		}
+		return frame.RawFrameFromParts(header, payload), nil
 	default:
 		return nil, fmt.Errorf("unsupported action type %q", actionType)
 	}

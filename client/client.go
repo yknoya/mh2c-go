@@ -131,6 +131,10 @@ func (c *Client) SendRawFrame(header frame.Header, payload []byte) error {
 	if uint32(len(payload)) != header.Length {
 		header.Length = uint32(len(payload))
 	}
+	return c.SendRawFrameExact(header, payload)
+}
+
+func (c *Client) SendRawFrameExact(header frame.Header, payload []byte) error {
 	head, err := header.MarshalBinary()
 	if err != nil {
 		return err
