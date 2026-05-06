@@ -7,14 +7,23 @@ import (
 )
 
 type WindowUpdateFrame struct {
-	StreamID  uint32
-	Increment uint32
+	FrameHeader Header
+	Increment   uint32
 }
 
 const windowUpdatePayloadLength = 4
 
+func NewWindowUpdateFrame(streamID uint32, increment uint32) WindowUpdateFrame {
+	frame := WindowUpdateFrame{
+		FrameHeader: Header{Type: TypeWindowUpdate, StreamID: streamID},
+		Increment:   increment,
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
+}
+
 func (f WindowUpdateFrame) Header() Header {
-	return Header{Type: TypeWindowUpdate, StreamID: f.StreamID}
+	return f.FrameHeader
 }
 
 func (f WindowUpdateFrame) Payload() []byte {
@@ -38,5 +47,5 @@ func parseWindowUpdateFrame(header Header, payload []byte) (Frame, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WindowUpdateFrame{StreamID: header.StreamID, Increment: incr & 0x7fff_ffff}, nil
+	return WindowUpdateFrame{FrameHeader: header, Increment: incr & 0x7fff_ffff}, nil
 }

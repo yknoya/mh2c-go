@@ -101,7 +101,7 @@ func TestBuildScriptFrameHeaders(t *testing.T) {
 	if !ok {
 		t.Fatalf("frame type = %T, want HeadersFrame", got)
 	}
-	if typed.StreamID != 1 || typed.Flags != frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream || len(typed.BlockFragment) == 0 {
+	if typed.Header().StreamID != 1 || typed.Header().Flags != frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream || len(typed.BlockFragment) == 0 {
 		t.Fatalf("HeadersFrame = %#v", typed)
 	}
 }
@@ -125,7 +125,7 @@ func TestBuildScriptFramePushPromiseWithBlockHex(t *testing.T) {
 	if !ok {
 		t.Fatalf("frame type = %T, want PushPromiseFrame", got)
 	}
-	if typed.StreamID != 1 || typed.PromisedStreamID != 2 || typed.Flags != frame.FlagPushPromiseEndHeaders {
+	if typed.Header().StreamID != 1 || typed.PromisedStreamID != 2 || typed.Header().Flags != frame.FlagPushPromiseEndHeaders {
 		t.Fatalf("PushPromiseFrame = %#v", typed)
 	}
 	if gotHex := hex.EncodeToString(typed.BlockFragment); gotHex != "8286" {
@@ -233,21 +233,14 @@ func TestConsumeHeaderBlockForDisplay(t *testing.T) {
 		pendingBlock  []byte
 		pendingEnd    bool
 	)
-	headers, warnings, streamID, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.HeadersFrame{
-		StreamID:      1,
-		BlockFragment: block[:len(block)/2],
-	}, codec.DecodeDetailed)
+	headers, warnings, streamID, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.NewHeadersFrame(1, 0, block[:len(block)/2]), codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("consumeHeaderBlockForDisplay(HEADERS) error = %v", err)
 	}
 	if len(headers) != 0 || len(warnings) != 0 || streamID != 0 || endStream {
 		t.Fatalf("HEADERS result = %#v, %#v, %d, %t", headers, warnings, streamID, endStream)
 	}
-	headers, warnings, streamID, endStream, err = consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.ContinuationFrame{
-		StreamID:      1,
-		Flags:         frame.FlagContinuationEndHeaders,
-		BlockFragment: block[len(block)/2:],
-	}, codec.DecodeDetailed)
+	headers, warnings, streamID, endStream, err = consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[len(block)/2:]), codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("consumeHeaderBlockForDisplay(CONTINUATION) error = %v", err)
 	}

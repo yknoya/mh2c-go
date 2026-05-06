@@ -80,10 +80,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 	split := len(block) / 2
 	state := responseState{streamID: 1}
 
-	result, err := state.Consume(frame.HeadersFrame{
-		StreamID:      1,
-		BlockFragment: append([]byte(nil), block[:split]...),
-	}, codec.DecodeDetailed)
+	result, err := state.Consume(frame.NewHeadersFrame(1, 0, block[:split]), codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(HEADERS) error = %v", err)
 	}
@@ -91,11 +88,7 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 		t.Fatalf("Consume(HEADERS) = %#v, want pending state", result)
 	}
 
-	result, err = state.Consume(frame.ContinuationFrame{
-		StreamID:      1,
-		Flags:         frame.FlagContinuationEndHeaders,
-		BlockFragment: append([]byte(nil), block[split:]...),
-	}, codec.DecodeDetailed)
+	result, err = state.Consume(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]), codec.DecodeDetailed)
 	if err != nil {
 		t.Fatalf("Consume(CONTINUATION) error = %v", err)
 	}
@@ -245,11 +238,9 @@ func TestPrepareOutputWriterMirrorsOutputToFile(t *testing.T) {
 func TestStartSessionDisplaysSentPrefaceAndSettings(t *testing.T) {
 	t.Parallel()
 
-	serverSettings, err := frame.SettingsFrame{
-		Settings: []frame.Setting{
-			{ID: frame.SettingMaxConcurrentStreams, Value: 100},
-		},
-	}.MarshalBinary()
+	serverSettings, err := frame.NewSettingsFrame(0, []frame.Setting{
+		{ID: frame.SettingMaxConcurrentStreams, Value: 100},
+	}).MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
 	}

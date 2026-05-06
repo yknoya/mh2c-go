@@ -7,14 +7,23 @@ import (
 )
 
 type RSTStreamFrame struct {
-	StreamID  uint32
-	ErrorCode ErrorCode
+	FrameHeader Header
+	ErrorCode   ErrorCode
 }
 
 const rstStreamPayloadLength = 4
 
+func NewRSTStreamFrame(streamID uint32, errorCode ErrorCode) RSTStreamFrame {
+	frame := RSTStreamFrame{
+		FrameHeader: Header{Type: TypeRSTStream, StreamID: streamID},
+		ErrorCode:   errorCode,
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
+}
+
 func (f RSTStreamFrame) Header() Header {
-	return Header{Type: TypeRSTStream, StreamID: f.StreamID}
+	return f.FrameHeader
 }
 
 func (f RSTStreamFrame) Payload() []byte {
@@ -37,5 +46,5 @@ func parseRSTStreamFrame(header Header, payload []byte) (Frame, error) {
 	if err != nil {
 		return nil, err
 	}
-	return RSTStreamFrame{StreamID: header.StreamID, ErrorCode: ErrorCode(code)}, nil
+	return RSTStreamFrame{FrameHeader: header, ErrorCode: ErrorCode(code)}, nil
 }

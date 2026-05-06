@@ -24,27 +24,27 @@ type consumeResult struct {
 func (s *responseState) Consume(f frame.Frame, decode func([]byte) (hpack.DecodeReport, error)) (consumeResult, error) {
 	switch typed := f.(type) {
 	case frame.HeadersFrame:
-		if typed.StreamID != s.streamID {
+		if typed.Header().StreamID != s.streamID {
 			return consumeResult{}, nil
 		}
 		if s.pendingStreamID != 0 {
 			return consumeResult{}, fmt.Errorf("received HEADERS before previous header block finished on stream %d", s.pendingStreamID)
 		}
-		s.pendingStreamID = typed.StreamID
+		s.pendingStreamID = typed.Header().StreamID
 		s.pendingHeaderBlock = append([]byte(nil), typed.BlockFragment...)
-		s.pendingEndStream = typed.Flags&frame.FlagHeadersEndStream != 0
-		if typed.Flags&frame.FlagHeadersEndHeaders != 0 {
+		s.pendingEndStream = typed.Header().Flags&frame.FlagHeadersEndStream != 0
+		if typed.Header().Flags&frame.FlagHeadersEndHeaders != 0 {
 			return s.finishHeaderBlock(decode)
 		}
 	case frame.ContinuationFrame:
 		if s.pendingStreamID == 0 {
-			return consumeResult{}, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.StreamID)
+			return consumeResult{}, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.Header().StreamID)
 		}
-		if typed.StreamID != s.pendingStreamID {
-			return consumeResult{}, fmt.Errorf("CONTINUATION stream mismatch: got %d, want %d", typed.StreamID, s.pendingStreamID)
+		if typed.Header().StreamID != s.pendingStreamID {
+			return consumeResult{}, fmt.Errorf("CONTINUATION stream mismatch: got %d, want %d", typed.Header().StreamID, s.pendingStreamID)
 		}
 		s.pendingHeaderBlock = append(s.pendingHeaderBlock, typed.BlockFragment...)
-		if typed.Flags&frame.FlagContinuationEndHeaders != 0 {
+		if typed.Header().Flags&frame.FlagContinuationEndHeaders != 0 {
 			return s.finishHeaderBlock(decode)
 		}
 	case frame.DataFrame:

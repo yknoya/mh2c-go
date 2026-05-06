@@ -7,10 +7,10 @@ import (
 )
 
 type PriorityFrame struct {
-	StreamID  uint32
-	Exclusive bool
-	StreamDep uint32
-	Weight    uint8
+	FrameHeader Header
+	Exclusive   bool
+	StreamDep   uint32
+	Weight      uint8
 }
 
 const (
@@ -19,8 +19,19 @@ const (
 	priorityPayloadLength = priorityDepLength + priorityWeightLength
 )
 
+func NewPriorityFrame(streamID uint32, exclusive bool, streamDep uint32, weight uint8) PriorityFrame {
+	frame := PriorityFrame{
+		FrameHeader: Header{Type: TypePriority, StreamID: streamID},
+		Exclusive:   exclusive,
+		StreamDep:   streamDep,
+		Weight:      weight,
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
+}
+
 func (f PriorityFrame) Header() Header {
-	return Header{Type: TypePriority, StreamID: f.StreamID}
+	return f.FrameHeader
 }
 
 func (f PriorityFrame) Payload() []byte {
@@ -49,9 +60,9 @@ func parsePriorityFrame(header Header, payload []byte) (Frame, error) {
 		return nil, err
 	}
 	return PriorityFrame{
-		StreamID:  header.StreamID,
-		Exclusive: dep&0x8000_0000 != 0,
-		StreamDep: dep & 0x7fff_ffff,
-		Weight:    payload[priorityDepLength],
+		FrameHeader: header,
+		Exclusive:   dep&0x8000_0000 != 0,
+		StreamDep:   dep & 0x7fff_ffff,
+		Weight:      payload[priorityDepLength],
 	}, nil
 }

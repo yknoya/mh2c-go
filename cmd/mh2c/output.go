@@ -154,7 +154,7 @@ func (o *outputController) decodeSentHeaders(h2c *client.Client, f frame.Frame) 
 	}
 
 	typed, ok := f.(frame.PushPromiseFrame)
-	if !ok || typed.Flags&frame.FlagPushPromiseEndHeaders == 0 {
+	if !ok || typed.Header().Flags&frame.FlagPushPromiseEndHeaders == 0 {
 		return nil, nil
 	}
 	report, err := h2c.RequestCodec().DecodeDetailed(typed.BlockFragment)
@@ -187,12 +187,12 @@ func (o *outputController) decodeReceivedHeaders(h2c *client.Client, f frame.Fra
 	}
 
 	typed, ok := f.(frame.PushPromiseFrame)
-	if !ok || typed.Flags&frame.FlagPushPromiseEndHeaders == 0 {
+	if !ok || typed.Header().Flags&frame.FlagPushPromiseEndHeaders == 0 {
 		return nil, nil, 0, false, nil
 	}
 	report, err := h2c.DecodeHeadersDetailed(typed.BlockFragment)
 	if err != nil {
 		return nil, nil, 0, false, err
 	}
-	return report.Fields, report.Warnings, typed.StreamID, false, nil
+	return report.Fields, report.Warnings, typed.Header().StreamID, false, nil
 }

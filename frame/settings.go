@@ -51,12 +51,21 @@ type Setting struct {
 }
 
 type SettingsFrame struct {
-	Flags    uint8
-	Settings []Setting
+	FrameHeader Header
+	Settings    []Setting
+}
+
+func NewSettingsFrame(flags uint8, settings []Setting) SettingsFrame {
+	frame := SettingsFrame{
+		FrameHeader: Header{Type: TypeSettings, Flags: flags, StreamID: 0},
+		Settings:    append([]Setting(nil), settings...),
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
 }
 
 func (f SettingsFrame) Header() Header {
-	return Header{Type: TypeSettings, Flags: f.Flags, StreamID: 0}
+	return f.FrameHeader
 }
 
 func (f SettingsFrame) Payload() []byte {
@@ -77,14 +86,14 @@ func (f SettingsFrame) String() string {
 	for _, setting := range f.Settings {
 		settings = append(settings, fmt.Sprintf("%s=%d", setting.ID, setting.Value))
 	}
-	return fmt.Sprintf("SETTINGS %s ack=%t settings=[%s]", frameHeader(f), f.Flags&FlagSettingsAck != 0, strings.Join(settings, " "))
+	return fmt.Sprintf("SETTINGS %s ack=%t settings=[%s]", frameHeader(f), f.Header().Flags&FlagSettingsAck != 0, strings.Join(settings, " "))
 }
 
 func parseSettingsFrame(header Header, payload []byte) (Frame, error) {
 	if len(payload)%settingEntryLength != 0 {
 		return nil, fmt.Errorf("SETTINGS payload must be multiple of %d bytes", settingEntryLength)
 	}
-	frame := SettingsFrame{Flags: header.Flags}
+	frame := SettingsFrame{FrameHeader: header}
 	for i := 0; i < len(payload); i += settingEntryLength {
 		id, err := wire.ReadUint16(payload[i : i+settingIDLength])
 		if err != nil {

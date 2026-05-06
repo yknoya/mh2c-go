@@ -41,7 +41,7 @@ func TestWriteTextFrameIncludesDecodedHeadersAndWarnings(t *testing.T) {
 	var out bytes.Buffer
 	err := WriteTextFrame(&out, TextFrame{
 		Prefix:          ">>",
-		Frame:           frame.HeadersFrame{StreamID: 3, Flags: frame.FlagHeadersEndHeaders, BlockFragment: []byte{0x82}},
+		Frame:           frame.NewHeadersFrame(3, frame.FlagHeadersEndHeaders, []byte{0x82}),
 		Headers:         []hpack.HeaderField{{Name: ":method", Value: "GET"}},
 		Warnings:        []string{"demo warning"},
 		ShowHeaderBlock: true,

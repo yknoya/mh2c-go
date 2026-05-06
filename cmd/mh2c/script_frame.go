@@ -31,7 +31,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.SettingsFrame{Flags: flags, Settings: settings}, nil
+		return frame.NewSettingsFrame(flags, settings), nil
 	case "headers":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -45,11 +45,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		frameValue := frame.HeadersFrame{
-			StreamID:      streamID,
-			Flags:         flags,
-			BlockFragment: block,
-		}
+		frameValue := frame.NewHeadersFrame(streamID, flags, block)
 		if flags&frame.FlagHeadersPriority != 0 {
 			priority, err := parsePriority(action)
 			if err != nil {
@@ -62,6 +58,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		} else if ok {
 			frameValue.PadLength = padLength
 		}
+		frameValue.FrameHeader.Length = uint32(len(frameValue.Payload()))
 		return frameValue, nil
 	case "continuation":
 		streamID, err := action.requireUint32("stream_id")
@@ -80,7 +77,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.ContinuationFrame{StreamID: streamID, Flags: flags, BlockFragment: block}, nil
+		return frame.NewContinuationFrame(streamID, flags, block), nil
 	case "data":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -117,7 +114,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.PingFrame{Flags: flags, Data: payload}, nil
+		return frame.NewPingFrame(flags, payload), nil
 	case "goaway":
 		lastStreamID, err := action.requireUint32("last_stream_id")
 		if err != nil {
@@ -131,7 +128,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.GoAwayFrame{LastStreamID: lastStreamID, ErrorCode: errorCode, DebugData: debugData}, nil
+		return frame.NewGoAwayFrame(lastStreamID, errorCode, debugData), nil
 	case "window_update":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -141,7 +138,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.WindowUpdateFrame{StreamID: streamID, Increment: increment}, nil
+		return frame.NewWindowUpdateFrame(streamID, increment), nil
 	case "rst_stream":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -151,7 +148,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.RSTStreamFrame{StreamID: streamID, ErrorCode: errorCode}, nil
+		return frame.NewRSTStreamFrame(streamID, errorCode), nil
 	case "priority":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -161,12 +158,7 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		return frame.PriorityFrame{
-			StreamID:  streamID,
-			Exclusive: priority.Exclusive,
-			StreamDep: priority.StreamDep,
-			Weight:    priority.Weight,
-		}, nil
+		return frame.NewPriorityFrame(streamID, priority.Exclusive, priority.StreamDep, priority.Weight), nil
 	case "push_promise":
 		streamID, err := action.requireUint32("stream_id")
 		if err != nil {
@@ -184,17 +176,13 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 		if err != nil {
 			return nil, err
 		}
-		frameValue := frame.PushPromiseFrame{
-			StreamID:         streamID,
-			Flags:            flags,
-			PromisedStreamID: promisedStreamID,
-			BlockFragment:    block,
-		}
+		frameValue := frame.NewPushPromiseFrame(streamID, flags, promisedStreamID, block)
 		if padLength, ok, err := action.optionalUint8("pad_length"); err != nil {
 			return nil, err
 		} else if ok {
 			frameValue.PadLength = padLength
 		}
+		frameValue.FrameHeader.Length = uint32(len(frameValue.Payload()))
 		return frameValue, nil
 	case "raw":
 		frameType, err := action.requireUint8("frame_type")

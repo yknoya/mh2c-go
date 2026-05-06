@@ -89,11 +89,7 @@ func sendRequest(h2c *client.Client, streamID uint32, fields []hpack.HeaderField
 	if len(body) == 0 {
 		flags |= frame.FlagHeadersEndStream
 	}
-	headers := frame.HeadersFrame{
-		StreamID:      streamID,
-		Flags:         flags,
-		BlockFragment: block,
-	}
+	headers := frame.NewHeadersFrame(streamID, flags, block)
 	if err := sendFrameAndReport(h2c, out, headers); err != nil {
 		return err
 	}

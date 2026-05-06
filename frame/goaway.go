@@ -28,13 +28,25 @@ const (
 )
 
 type GoAwayFrame struct {
+	FrameHeader  Header
 	LastStreamID uint32
 	ErrorCode    ErrorCode
 	DebugData    []byte
 }
 
+func NewGoAwayFrame(lastStreamID uint32, errorCode ErrorCode, debugData []byte) GoAwayFrame {
+	frame := GoAwayFrame{
+		FrameHeader:  Header{Type: TypeGoAway, StreamID: 0},
+		LastStreamID: lastStreamID,
+		ErrorCode:    errorCode,
+		DebugData:    append([]byte(nil), debugData...),
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
+}
+
 func (f GoAwayFrame) Header() Header {
-	return Header{Type: TypeGoAway, StreamID: 0}
+	return f.FrameHeader
 }
 
 func (f GoAwayFrame) Payload() []byte {
@@ -68,6 +80,7 @@ func parseGoAwayFrame(header Header, payload []byte) (Frame, error) {
 		return nil, err
 	}
 	return GoAwayFrame{
+		FrameHeader:  header,
 		LastStreamID: last & 0x7fff_ffff,
 		ErrorCode:    ErrorCode(code),
 		DebugData:    append([]byte(nil), payload[goAwayMinPayloadLength:]...),

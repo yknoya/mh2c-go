@@ -68,8 +68,8 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 
 		switch typed := received.(type) {
 		case frame.SettingsFrame:
-			if ackSettings && typed.Flags&frame.FlagSettingsAck == 0 {
-				ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+			if ackSettings && typed.Header().Flags&frame.FlagSettingsAck == 0 {
+				ack := frame.NewSettingsFrame(frame.FlagSettingsAck, nil)
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
@@ -77,15 +77,15 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 					return sawGoAway, err
 				}
 			}
-			if until == "settings" && typed.Flags&frame.FlagSettingsAck == 0 {
+			if until == "settings" && typed.Header().Flags&frame.FlagSettingsAck == 0 {
 				return sawGoAway, nil
 			}
-			if until == "settings_ack" && typed.Flags&frame.FlagSettingsAck != 0 {
+			if until == "settings_ack" && typed.Header().Flags&frame.FlagSettingsAck != 0 {
 				return sawGoAway, nil
 			}
 		case frame.PingFrame:
-			if ackPing && typed.Flags&frame.FlagPingAck == 0 {
-				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+			if ackPing && typed.Header().Flags&frame.FlagPingAck == 0 {
+				ack := frame.NewPingFrame(frame.FlagPingAck, typed.Data)
 				if err := h2c.SendFrame(ack); err != nil {
 					return sawGoAway, err
 				}
@@ -93,7 +93,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 					return sawGoAway, err
 				}
 			}
-			if until == "ping_ack" && typed.Flags&frame.FlagPingAck != 0 {
+			if until == "ping_ack" && typed.Header().Flags&frame.FlagPingAck != 0 {
 				return sawGoAway, nil
 			}
 		case frame.GoAwayFrame:
@@ -106,7 +106,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 				return sawGoAway, nil
 			}
 		case frame.HeadersFrame:
-			if until == "end_stream" && hasStreamID && typed.StreamID == streamID && typed.Flags&frame.FlagHeadersEndStream != 0 {
+			if until == "end_stream" && hasStreamID && typed.Header().StreamID == streamID && typed.Header().Flags&frame.FlagHeadersEndStream != 0 {
 				return sawGoAway, nil
 			}
 		}

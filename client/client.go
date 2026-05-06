@@ -195,11 +195,7 @@ func (c *Client) applyFrame(f frame.Frame) {
 }
 
 func MustHeadersFrame(streamID uint32, flags uint8, block []byte) frame.HeadersFrame {
-	return frame.HeadersFrame{
-		StreamID:      streamID,
-		Flags:         flags,
-		BlockFragment: append([]byte(nil), block...),
-	}
+	return frame.NewHeadersFrame(streamID, flags, block)
 }
 
 func DebugFrameString(f frame.Frame) string {

@@ -41,9 +41,7 @@ func TestSendAndReceiveFrame(t *testing.T) {
 	defer right.Close()
 
 	c := NewWithConn(left)
-	want := frame.SettingsFrame{
-		Settings: []frame.Setting{{ID: frame.SettingEnablePush, Value: 0}},
-	}
+	want := frame.NewSettingsFrame(0, []frame.Setting{{ID: frame.SettingEnablePush, Value: 0}})
 	go func() {
 		raw, _ := want.MarshalBinary()
 		_, _ = right.Write(raw)
@@ -167,9 +165,7 @@ func TestReceiveSettingsUpdatesRequestCodecHeaderTableSize(t *testing.T) {
 	fields := []hpack.HeaderField{{Name: "x-test", Value: "one"}}
 
 	go func() {
-		raw, _ := frame.SettingsFrame{
-			Settings: []frame.Setting{{ID: frame.SettingHeaderTableSize, Value: 8192}},
-		}.MarshalBinary()
+		raw, _ := frame.NewSettingsFrame(0, []frame.Setting{{ID: frame.SettingHeaderTableSize, Value: 8192}}).MarshalBinary()
 		_, _ = right.Write(raw)
 	}()
 

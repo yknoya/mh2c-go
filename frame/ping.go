@@ -7,12 +7,21 @@ const FlagPingAck uint8 = 0x1
 const pingPayloadLength = 8
 
 type PingFrame struct {
-	Flags uint8
-	Data  [pingPayloadLength]byte
+	FrameHeader Header
+	Data        [pingPayloadLength]byte
+}
+
+func NewPingFrame(flags uint8, data [pingPayloadLength]byte) PingFrame {
+	frame := PingFrame{
+		FrameHeader: Header{Type: TypePing, Flags: flags, StreamID: 0},
+		Data:        data,
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
 }
 
 func (f PingFrame) Header() Header {
-	return Header{Type: TypePing, Flags: f.Flags, StreamID: 0}
+	return f.FrameHeader
 }
 
 func (f PingFrame) Payload() []byte {
@@ -24,7 +33,7 @@ func (f PingFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f PingFrame) String() string {
-	return fmt.Sprintf("PING %s ack=%t data=%x", frameHeader(f), f.Flags&FlagPingAck != 0, f.Data)
+	return fmt.Sprintf("PING %s ack=%t data=%x", frameHeader(f), f.Header().Flags&FlagPingAck != 0, f.Data)
 }
 
 func parsePingFrame(header Header, payload []byte) (Frame, error) {
@@ -33,5 +42,5 @@ func parsePingFrame(header Header, payload []byte) (Frame, error) {
 	}
 	var data [pingPayloadLength]byte
 	copy(data[:], payload)
-	return PingFrame{Flags: header.Flags, Data: data}, nil
+	return PingFrame{FrameHeader: header, Data: data}, nil
 }

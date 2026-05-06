@@ -28,12 +28,10 @@ func TestHeaderRoundTrip(t *testing.T) {
 func TestSettingsFrameRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	src := SettingsFrame{
-		Settings: []Setting{
-			{ID: SettingEnablePush, Value: 0},
-			{ID: SettingInitialWindowSize, Value: 65535},
-		},
-	}
+	src := NewSettingsFrame(0, []Setting{
+		{ID: SettingEnablePush, Value: 0},
+		{ID: SettingInitialWindowSize, Value: 65535},
+	})
 	raw, err := src.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
@@ -58,12 +56,9 @@ func TestSettingsFrameRoundTrip(t *testing.T) {
 func TestHeadersFrameRoundTripWithPriority(t *testing.T) {
 	t.Parallel()
 
-	src := HeadersFrame{
-		StreamID:      1,
-		Flags:         FlagHeadersEndHeaders | FlagHeadersPriority,
-		Priority:      &PriorityParam{Exclusive: true, StreamDep: 3, Weight: 10},
-		BlockFragment: []byte{0x82, 0x86},
-	}
+	src := NewHeadersFrame(1, FlagHeadersEndHeaders|FlagHeadersPriority, []byte{0x82, 0x86})
+	src.Priority = &PriorityParam{Exclusive: true, StreamDep: 3, Weight: 10}
+	src.FrameHeader.Length = uint32(len(src.Payload()))
 	raw, err := src.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
@@ -91,12 +86,7 @@ func TestHeadersFrameRoundTripWithPriority(t *testing.T) {
 func TestPriorityFrameRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	src := PriorityFrame{
-		StreamID:  7,
-		Exclusive: true,
-		StreamDep: 3,
-		Weight:    15,
-	}
+	src := NewPriorityFrame(7, true, 3, 15)
 	raw, err := src.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
@@ -121,13 +111,9 @@ func TestPriorityFrameRoundTrip(t *testing.T) {
 func TestPushPromiseFrameRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	src := PushPromiseFrame{
-		StreamID:         1,
-		Flags:            FlagPushPromiseEndHeaders | FlagPushPromisePadded,
-		PadLength:        2,
-		PromisedStreamID: 2,
-		BlockFragment:    []byte{0x82, 0x86},
-	}
+	src := NewPushPromiseFrame(1, FlagPushPromiseEndHeaders|FlagPushPromisePadded, 2, []byte{0x82, 0x86})
+	src.PadLength = 2
+	src.FrameHeader.Length = uint32(len(src.Payload()))
 	raw, err := src.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary() error = %v", err)
@@ -144,7 +130,7 @@ func TestPushPromiseFrameRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("Unmarshal() type = %T, want PushPromiseFrame", got)
 	}
-	if typed.StreamID != src.StreamID || typed.Flags != src.Flags || typed.PadLength != src.PadLength || typed.PromisedStreamID != src.PromisedStreamID {
+	if typed.Header().StreamID != src.Header().StreamID || typed.Header().Flags != src.Header().Flags || typed.PadLength != src.PadLength || typed.PromisedStreamID != src.PromisedStreamID {
 		t.Fatalf("PushPromiseFrame = %#v, want %#v", typed, src)
 	}
 	if !bytes.Equal(typed.BlockFragment, src.BlockFragment) {
@@ -195,6 +181,96 @@ func TestRawFrameExactPartsPreserveHeaderLength(t *testing.T) {
 	}
 }
 
+func TestTypedFrameConstructorsSetCompleteHeaders(t *testing.T) {
+	t.Parallel()
+
+	pingData := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	tests := []struct {
+		name string
+		got  Frame
+		want Header
+	}{
+		{
+			name: "settings",
+			got:  NewSettingsFrame(FlagSettingsAck, nil),
+			want: Header{Type: TypeSettings, Flags: FlagSettingsAck, Length: 0},
+		},
+		{
+			name: "headers",
+			got:  NewHeadersFrame(1, FlagHeadersEndHeaders, []byte{0x82, 0x86}),
+			want: Header{Type: TypeHeaders, Flags: FlagHeadersEndHeaders, StreamID: 1, Length: 2},
+		},
+		{
+			name: "continuation",
+			got:  NewContinuationFrame(1, FlagContinuationEndHeaders, []byte{0x82}),
+			want: Header{Type: TypeContinuation, Flags: FlagContinuationEndHeaders, StreamID: 1, Length: 1},
+		},
+		{
+			name: "push_promise",
+			got:  NewPushPromiseFrame(1, FlagPushPromiseEndHeaders, 2, []byte{0x82}),
+			want: Header{Type: TypePushPromise, Flags: FlagPushPromiseEndHeaders, StreamID: 1, Length: 5},
+		},
+		{
+			name: "ping",
+			got:  NewPingFrame(FlagPingAck, pingData),
+			want: Header{Type: TypePing, Flags: FlagPingAck, Length: 8},
+		},
+		{
+			name: "goaway",
+			got:  NewGoAwayFrame(3, ErrNo, []byte{0xaa, 0xbb}),
+			want: Header{Type: TypeGoAway, Length: 10},
+		},
+		{
+			name: "priority",
+			got:  NewPriorityFrame(7, true, 3, 15),
+			want: Header{Type: TypePriority, StreamID: 7, Length: 5},
+		},
+		{
+			name: "rst_stream",
+			got:  NewRSTStreamFrame(9, ErrNo),
+			want: Header{Type: TypeRSTStream, StreamID: 9, Length: 4},
+		},
+		{
+			name: "window_update",
+			got:  NewWindowUpdateFrame(11, 1024),
+			want: Header{Type: TypeWindowUpdate, StreamID: 11, Length: 4},
+		},
+	}
+
+	for _, tt := range tests {
+		if got := tt.got.Header(); got != tt.want {
+			t.Fatalf("%s Header() = %#v, want %#v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestTypedFrameConstructorsCopySliceInputs(t *testing.T) {
+	t.Parallel()
+
+	settings := []Setting{{ID: SettingEnablePush, Value: 0}}
+	settingsFrame := NewSettingsFrame(0, settings)
+	settings[0].Value = 1
+	if settingsFrame.Settings[0].Value != 0 {
+		t.Fatalf("SettingsFrame settings = %#v, want copied input", settingsFrame.Settings)
+	}
+
+	block := []byte{0x82, 0x86}
+	headersFrame := NewHeadersFrame(1, FlagHeadersEndHeaders, block)
+	continuationFrame := NewContinuationFrame(1, FlagContinuationEndHeaders, block)
+	pushPromiseFrame := NewPushPromiseFrame(1, FlagPushPromiseEndHeaders, 2, block)
+	block[0] = 0xff
+	if headersFrame.BlockFragment[0] != 0x82 || continuationFrame.BlockFragment[0] != 0x82 || pushPromiseFrame.BlockFragment[0] != 0x82 {
+		t.Fatalf("header block constructors did not copy input")
+	}
+
+	debug := []byte{0xaa, 0xbb}
+	goAwayFrame := NewGoAwayFrame(3, ErrNo, debug)
+	debug[0] = 0xff
+	if goAwayFrame.DebugData[0] != 0xaa {
+		t.Fatalf("GoAwayFrame debug data = %x, want copied input", goAwayFrame.DebugData)
+	}
+}
+
 func TestNewDataFrameCopiesDataAndSetsHeader(t *testing.T) {
 	t.Parallel()
 
@@ -217,12 +293,10 @@ func TestNewDataFrameCopiesDataAndSetsHeader(t *testing.T) {
 func TestFrameStringIncludesHeaderAndSemantics(t *testing.T) {
 	t.Parallel()
 
-	settings := SettingsFrame{
-		Settings: []Setting{
-			{ID: SettingHeaderTableSize, Value: 4096},
-			{ID: SettingEnablePush, Value: 0},
-		},
-	}
+	settings := NewSettingsFrame(0, []Setting{
+		{ID: SettingHeaderTableSize, Value: 4096},
+		{ID: SettingEnablePush, Value: 0},
+	})
 	for _, want := range []string{
 		"SETTINGS stream=0",
 		"len=12",

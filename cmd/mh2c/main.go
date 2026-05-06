@@ -115,7 +115,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 		if err != nil {
 			return err
 		}
-		pingFrame := frame.PingFrame{Data: payload}
+		pingFrame := frame.NewPingFrame(0, payload)
 		if err := sendFrameAndReport(h2c, controller, pingFrame); err != nil {
 			return err
 		}
@@ -141,10 +141,7 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 
 	if cfg.sendGoAway && !sawGoAway {
-		goAway := frame.GoAwayFrame{
-			LastStreamID: streamID,
-			ErrorCode:    frame.ErrNo,
-		}
+		goAway := frame.NewGoAwayFrame(streamID, frame.ErrNo, nil)
 		if err := h2c.SendFrame(goAway); err == nil {
 			_ = controller.HandleSent(h2c, goAway)
 		}

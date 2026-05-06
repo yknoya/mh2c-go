@@ -17,26 +17,36 @@ const (
 )
 
 type PushPromiseFrame struct {
-	StreamID         uint32
-	Flags            uint8
+	FrameHeader      Header
 	PadLength        uint8
 	PromisedStreamID uint32
 	BlockFragment    []byte
 }
 
+func NewPushPromiseFrame(streamID uint32, flags uint8, promisedStreamID uint32, block []byte) PushPromiseFrame {
+	frame := PushPromiseFrame{
+		FrameHeader:      Header{Type: TypePushPromise, StreamID: streamID, Flags: flags},
+		PromisedStreamID: promisedStreamID,
+		BlockFragment:    append([]byte(nil), block...),
+	}
+	frame.FrameHeader.Length = uint32(len(frame.Payload()))
+	return frame
+}
+
 func (f PushPromiseFrame) Header() Header {
-	return Header{Type: TypePushPromise, Flags: f.Flags, StreamID: f.StreamID}
+	return f.FrameHeader
 }
 
 func (f PushPromiseFrame) Payload() []byte {
+	flags := f.Header().Flags
 	payload := make([]byte, 0, len(f.BlockFragment)+pushPromisePadLengthFieldLength+pushPromiseStreamIDLength)
-	if f.Flags&FlagPushPromisePadded != 0 {
+	if flags&FlagPushPromisePadded != 0 {
 		payload = append(payload, f.PadLength)
 	}
 	promised := f.PromisedStreamID & 0x7fff_ffff
 	payload = wire.AppendUint32(payload, promised)
 	payload = append(payload, f.BlockFragment...)
-	if f.Flags&FlagPushPromisePadded != 0 {
+	if flags&FlagPushPromisePadded != 0 {
 		payload = append(payload, make([]byte, int(f.PadLength))...)
 	}
 	return payload
@@ -50,7 +60,7 @@ func (f PushPromiseFrame) String() string {
 	return fmt.Sprintf(
 		"PUSH_PROMISE %s end_headers=%t promised=%d block=%d pad=%d",
 		frameHeader(f),
-		f.Flags&FlagPushPromiseEndHeaders != 0,
+		f.Header().Flags&FlagPushPromiseEndHeaders != 0,
 		f.PromisedStreamID,
 		len(f.BlockFragment),
 		f.PadLength,
@@ -58,7 +68,7 @@ func (f PushPromiseFrame) String() string {
 }
 
 func parsePushPromiseFrame(header Header, payload []byte) (Frame, error) {
-	frame := PushPromiseFrame{StreamID: header.StreamID, Flags: header.Flags}
+	frame := PushPromiseFrame{FrameHeader: header}
 	offset := 0
 	if header.Flags&FlagPushPromisePadded != 0 {
 		if len(payload) == 0 {

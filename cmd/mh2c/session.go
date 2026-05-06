@@ -14,13 +14,11 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 	if err := out.PrintNotice("sent", "preface", "CONNECTION_PREFACE"); err != nil {
 		return err
 	}
-	settings := frame.SettingsFrame{
-		Settings: []frame.Setting{
-			{ID: frame.SettingEnablePush, Value: 0},
-			{ID: frame.SettingInitialWindowSize, Value: 65535},
-			{ID: frame.SettingHeaderTableSize, Value: maxTable},
-		},
-	}
+	settings := frame.NewSettingsFrame(0, []frame.Setting{
+		{ID: frame.SettingEnablePush, Value: 0},
+		{ID: frame.SettingInitialWindowSize, Value: 65535},
+		{ID: frame.SettingHeaderTableSize, Value: maxTable},
+	})
 	if err := sendFrameAndReport(h2c, out, settings); err != nil {
 		return err
 	}
@@ -36,14 +34,14 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 
 		switch typed := f.(type) {
 		case frame.SettingsFrame:
-			if typed.Flags&frame.FlagSettingsAck != 0 {
+			if typed.Header().Flags&frame.FlagSettingsAck != 0 {
 				continue
 			}
-			ack := frame.SettingsFrame{Flags: frame.FlagSettingsAck}
+			ack := frame.NewSettingsFrame(frame.FlagSettingsAck, nil)
 			return sendFrameAndReport(h2c, out, ack)
 		case frame.PingFrame:
-			if typed.Flags&frame.FlagPingAck == 0 {
-				ack := frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data}
+			if typed.Header().Flags&frame.FlagPingAck == 0 {
+				ack := frame.NewPingFrame(frame.FlagPingAck, typed.Data)
 				if err := sendFrameAndReport(h2c, out, ack); err != nil {
 					return err
 				}
@@ -64,12 +62,12 @@ func sendFrameAndReport(h2c *client.Client, out *outputController, f frame.Frame
 func ackControlFrame(h2c *client.Client, out *outputController, f frame.Frame) error {
 	switch typed := f.(type) {
 	case frame.SettingsFrame:
-		if typed.Flags&frame.FlagSettingsAck == 0 {
-			return sendFrameAndReport(h2c, out, frame.SettingsFrame{Flags: frame.FlagSettingsAck})
+		if typed.Header().Flags&frame.FlagSettingsAck == 0 {
+			return sendFrameAndReport(h2c, out, frame.NewSettingsFrame(frame.FlagSettingsAck, nil))
 		}
 	case frame.PingFrame:
-		if typed.Flags&frame.FlagPingAck == 0 {
-			return sendFrameAndReport(h2c, out, frame.PingFrame{Flags: frame.FlagPingAck, Data: typed.Data})
+		if typed.Header().Flags&frame.FlagPingAck == 0 {
+			return sendFrameAndReport(h2c, out, frame.NewPingFrame(frame.FlagPingAck, typed.Data))
 		}
 	}
 	return nil
@@ -122,7 +120,7 @@ func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) 
 
 		switch typed := f.(type) {
 		case frame.PingFrame:
-			if typed.Flags&frame.FlagPingAck == 0 {
+			if typed.Header().Flags&frame.FlagPingAck == 0 {
 				continue
 			}
 			if typed.Data == want {
