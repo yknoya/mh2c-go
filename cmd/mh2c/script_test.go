@@ -66,6 +66,49 @@ duration_ms = 250
 	}
 }
 
+func TestParseScriptAcceptsTOMLStringArrays(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = 'headers'
+stream_id = 1
+flags = [
+  'END_HEADERS',
+  'END_STREAM',
+]
+headers = [
+  ':method: GET',
+  ':path: /',
+]
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	flags, ok, err := script.actions[0].stringListValue("flags")
+	if err != nil || !ok || strings.Join(flags, ",") != "END_HEADERS,END_STREAM" {
+		t.Fatalf("flags = %#v, ok = %t, err = %v", flags, ok, err)
+	}
+	headers, ok, err := script.actions[0].stringListValue("headers")
+	if err != nil || !ok || strings.Join(headers, ",") != ":method: GET,:path: /" {
+		t.Fatalf("headers = %#v, ok = %t, err = %v", headers, ok, err)
+	}
+}
+
+func TestParseScriptRejectsNonStringArray(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseScript(`
+[[action]]
+type = "headers"
+stream_id = 1
+flags = ["END_HEADERS", 1]
+`)
+	if err == nil || !strings.Contains(err.Error(), "array elements must be strings") {
+		t.Fatalf("parseScript() error = %v, want string array validation", err)
+	}
+}
+
 func TestApplyScriptConnection(t *testing.T) {
 	t.Parallel()
 
@@ -246,49 +289,6 @@ func TestConsumeHeaderBlockForDisplay(t *testing.T) {
 	}
 	if streamID != 1 || len(warnings) != 0 || endStream || fieldValue(headers, ":status") != "200" {
 		t.Fatalf("headers = %#v, warnings = %#v, streamID = %d, endStream = %t", headers, warnings, streamID, endStream)
-	}
-}
-
-func TestParseScriptAcceptsTOMLStringArrays(t *testing.T) {
-	t.Parallel()
-
-	script, err := parseScript(`
-[[action]]
-type = 'headers'
-stream_id = 1
-flags = [
-  'END_HEADERS',
-  'END_STREAM',
-]
-headers = [
-  ':method: GET',
-  ':path: /',
-]
-`)
-	if err != nil {
-		t.Fatalf("parseScript() error = %v", err)
-	}
-	flags, ok, err := script.actions[0].stringListValue("flags")
-	if err != nil || !ok || strings.Join(flags, ",") != "END_HEADERS,END_STREAM" {
-		t.Fatalf("flags = %#v, ok = %t, err = %v", flags, ok, err)
-	}
-	headers, ok, err := script.actions[0].stringListValue("headers")
-	if err != nil || !ok || strings.Join(headers, ",") != ":method: GET,:path: /" {
-		t.Fatalf("headers = %#v, ok = %t, err = %v", headers, ok, err)
-	}
-}
-
-func TestParseScriptRejectsNonStringArray(t *testing.T) {
-	t.Parallel()
-
-	_, err := parseScript(`
-[[action]]
-type = "headers"
-stream_id = 1
-flags = ["END_HEADERS", 1]
-`)
-	if err == nil || !strings.Contains(err.Error(), "array elements must be strings") {
-		t.Fatalf("parseScript() error = %v, want string array validation", err)
 	}
 }
 

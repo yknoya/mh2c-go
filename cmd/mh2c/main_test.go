@@ -13,98 +13,6 @@ import (
 	"github.com/yknoya/mh2c-go/hpack"
 )
 
-func TestResolveEndpointWithURL(t *testing.T) {
-	t.Parallel()
-
-	got, err := resolveEndpoint(config{
-		rawURL: "https://example.com:8443/demo?q=1",
-	})
-	if err != nil {
-		t.Fatalf("resolveEndpoint() error = %v", err)
-	}
-	if got.scheme != "https" || got.host != "example.com" || got.authority != "example.com:8443" || got.port != 8443 || got.path != "/demo?q=1" {
-		t.Fatalf("resolveEndpoint() = %#v", got)
-	}
-}
-
-func TestParseHeaderPseudoHeader(t *testing.T) {
-	t.Parallel()
-
-	got, err := parseHeader(":authority: example.com:8443")
-	if err != nil {
-		t.Fatalf("parseHeader() error = %v", err)
-	}
-	if got.Name != ":authority" || got.Value != "example.com:8443" {
-		t.Fatalf("parseHeader() = %#v", got)
-	}
-}
-
-func TestBuildRequestFieldsAddsContentLength(t *testing.T) {
-	t.Parallel()
-
-	fields, err := buildRequestFields(endpoint{
-		scheme:    "https",
-		authority: "example.com",
-		path:      "/demo",
-	}, config{
-		method: "POST",
-		headers: headerFlags{
-			"user-agent: mh2c-go-test",
-		},
-	}, []byte("hello"))
-	if err != nil {
-		t.Fatalf("buildRequestFields() error = %v", err)
-	}
-	if fieldValue(fields, ":method") != "POST" {
-		t.Fatalf(":method = %q, want POST", fieldValue(fields, ":method"))
-	}
-	if fieldValue(fields, "content-length") != "5" {
-		t.Fatalf("content-length = %q, want 5", fieldValue(fields, "content-length"))
-	}
-	if fieldValue(fields, "user-agent") != "mh2c-go-test" {
-		t.Fatalf("user-agent = %q, want mh2c-go-test", fieldValue(fields, "user-agent"))
-	}
-}
-
-func TestResponseStateConsumesContinuation(t *testing.T) {
-	t.Parallel()
-
-	codec := hpack.NewCodec(4096)
-	block, err := codec.Encode([]hpack.HeaderField{
-		{Name: ":status", Value: "200"},
-		{Name: "content-type", Value: "text/plain"},
-	})
-	if err != nil {
-		t.Fatalf("Encode() error = %v", err)
-	}
-	split := len(block) / 2
-	state := responseState{streamID: 1}
-
-	result, err := state.Consume(frame.NewHeadersFrame(1, 0, block[:split]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(HEADERS) error = %v", err)
-	}
-	if len(result.headers) != 0 || result.done {
-		t.Fatalf("Consume(HEADERS) = %#v, want pending state", result)
-	}
-
-	result, err = state.Consume(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(CONTINUATION) error = %v", err)
-	}
-	if fieldValue(result.headers, ":status") != "200" {
-		t.Fatalf(":status = %q, want 200", fieldValue(result.headers, ":status"))
-	}
-
-	result, err = state.Consume(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(DATA) error = %v", err)
-	}
-	if !result.done || !bytes.Equal(result.data, []byte("hello")) {
-		t.Fatalf("Consume(DATA) = %#v, want done with hello", result)
-	}
-}
-
 func TestParseConfigObserveMode(t *testing.T) {
 	t.Parallel()
 
@@ -199,6 +107,98 @@ func TestParseConfigScriptRun(t *testing.T) {
 	}
 	if len(cfg.directionFilters) != 1 || cfg.directionFilters[0] != "sent" {
 		t.Fatalf("directionFilters = %#v", cfg.directionFilters)
+	}
+}
+
+func TestResolveEndpointWithURL(t *testing.T) {
+	t.Parallel()
+
+	got, err := resolveEndpoint(config{
+		rawURL: "https://example.com:8443/demo?q=1",
+	})
+	if err != nil {
+		t.Fatalf("resolveEndpoint() error = %v", err)
+	}
+	if got.scheme != "https" || got.host != "example.com" || got.authority != "example.com:8443" || got.port != 8443 || got.path != "/demo?q=1" {
+		t.Fatalf("resolveEndpoint() = %#v", got)
+	}
+}
+
+func TestParseHeaderPseudoHeader(t *testing.T) {
+	t.Parallel()
+
+	got, err := parseHeader(":authority: example.com:8443")
+	if err != nil {
+		t.Fatalf("parseHeader() error = %v", err)
+	}
+	if got.Name != ":authority" || got.Value != "example.com:8443" {
+		t.Fatalf("parseHeader() = %#v", got)
+	}
+}
+
+func TestBuildRequestFieldsAddsContentLength(t *testing.T) {
+	t.Parallel()
+
+	fields, err := buildRequestFields(endpoint{
+		scheme:    "https",
+		authority: "example.com",
+		path:      "/demo",
+	}, config{
+		method: "POST",
+		headers: headerFlags{
+			"user-agent: mh2c-go-test",
+		},
+	}, []byte("hello"))
+	if err != nil {
+		t.Fatalf("buildRequestFields() error = %v", err)
+	}
+	if fieldValue(fields, ":method") != "POST" {
+		t.Fatalf(":method = %q, want POST", fieldValue(fields, ":method"))
+	}
+	if fieldValue(fields, "content-length") != "5" {
+		t.Fatalf("content-length = %q, want 5", fieldValue(fields, "content-length"))
+	}
+	if fieldValue(fields, "user-agent") != "mh2c-go-test" {
+		t.Fatalf("user-agent = %q, want mh2c-go-test", fieldValue(fields, "user-agent"))
+	}
+}
+
+func TestResponseStateConsumesContinuation(t *testing.T) {
+	t.Parallel()
+
+	codec := hpack.NewCodec(4096)
+	block, err := codec.Encode([]hpack.HeaderField{
+		{Name: ":status", Value: "200"},
+		{Name: "content-type", Value: "text/plain"},
+	})
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	split := len(block) / 2
+	state := responseState{streamID: 1}
+
+	result, err := state.Consume(frame.NewHeadersFrame(1, 0, block[:split]), codec.DecodeDetailed)
+	if err != nil {
+		t.Fatalf("Consume(HEADERS) error = %v", err)
+	}
+	if len(result.headers) != 0 || result.done {
+		t.Fatalf("Consume(HEADERS) = %#v, want pending state", result)
+	}
+
+	result, err = state.Consume(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]), codec.DecodeDetailed)
+	if err != nil {
+		t.Fatalf("Consume(CONTINUATION) error = %v", err)
+	}
+	if fieldValue(result.headers, ":status") != "200" {
+		t.Fatalf(":status = %q, want 200", fieldValue(result.headers, ":status"))
+	}
+
+	result, err = state.Consume(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")), codec.DecodeDetailed)
+	if err != nil {
+		t.Fatalf("Consume(DATA) error = %v", err)
+	}
+	if !result.done || !bytes.Equal(result.data, []byte("hello")) {
+		t.Fatalf("Consume(DATA) = %#v, want done with hello", result)
 	}
 }
 

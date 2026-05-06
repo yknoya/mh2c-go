@@ -83,6 +83,26 @@ type config struct {
 	directionFilters stringFlags
 }
 
+func defaultConfig() config {
+	return config{
+		mode:            "request",
+		scheme:          "https",
+		host:            "nghttp2.org",
+		path:            "/httpbin/headers",
+		method:          "GET",
+		pingData:        "mh2cping",
+		timeout:         10 * time.Second,
+		maxTable:        defaultMaxDynamicTableSize,
+		port:            443,
+		streamID:        1,
+		sendGoAway:      true,
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	}
+}
+
 func parseConfig(args []string, stderr io.Writer) (config, error) {
 	cfg := defaultConfig()
 	if len(args) == 0 {
@@ -118,24 +138,15 @@ func parseConfig(args []string, stderr io.Writer) (config, error) {
 	}
 }
 
-func defaultConfig() config {
-	return config{
-		mode:            "request",
-		scheme:          "https",
-		host:            "nghttp2.org",
-		path:            "/httpbin/headers",
-		method:          "GET",
-		pingData:        "mh2cping",
-		timeout:         10 * time.Second,
-		maxTable:        defaultMaxDynamicTableSize,
-		port:            443,
-		streamID:        1,
-		sendGoAway:      true,
-		outputFormat:    outputFormatText,
-		dataFormat:      dataFormatBoth,
-		decodeHeaders:   true,
-		showHeaderBlock: true,
-	}
+func printTopLevelUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  mh2c request [options]")
+	fmt.Fprintln(w, "  mh2c ping [options]")
+	fmt.Fprintln(w, "  mh2c observe [options]")
+	fmt.Fprintln(w, "  mh2c script run --script-file file.toml [options]")
+	fmt.Fprintln(w, "  mh2c script describe [--type action_type]")
+	fmt.Fprintln(w, "  mh2c script template request")
+	fmt.Fprintln(w, "  mh2c script validate --script-file file.toml")
 }
 
 func parseRequestConfig(cfg config, args []string, stderr io.Writer) (config, error) {
@@ -250,6 +261,14 @@ func parseScriptConfig(cfg config, args []string, stderr io.Writer) (config, err
 	}
 }
 
+func printScriptUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  mh2c script run --script-file file.toml [options]")
+	fmt.Fprintln(w, "  mh2c script describe [--type action_type]")
+	fmt.Fprintln(w, "  mh2c script template request")
+	fmt.Fprintln(w, "  mh2c script validate --script-file file.toml")
+}
+
 func newCommandFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -333,23 +352,4 @@ func validateExecutionConfig(cfg config) (config, error) {
 		return config{}, fmt.Errorf("save-body and save-headers are only supported in request or observe mode")
 	}
 	return cfg, nil
-}
-
-func printTopLevelUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  mh2c request [options]")
-	fmt.Fprintln(w, "  mh2c ping [options]")
-	fmt.Fprintln(w, "  mh2c observe [options]")
-	fmt.Fprintln(w, "  mh2c script run --script-file file.toml [options]")
-	fmt.Fprintln(w, "  mh2c script describe [--type action_type]")
-	fmt.Fprintln(w, "  mh2c script template request")
-	fmt.Fprintln(w, "  mh2c script validate --script-file file.toml")
-}
-
-func printScriptUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  mh2c script run --script-file file.toml [options]")
-	fmt.Fprintln(w, "  mh2c script describe [--type action_type]")
-	fmt.Fprintln(w, "  mh2c script template request")
-	fmt.Fprintln(w, "  mh2c script validate --script-file file.toml")
 }

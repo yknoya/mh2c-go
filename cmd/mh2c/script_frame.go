@@ -225,6 +225,26 @@ func buildScriptFrame(h2c *client.Client, action scriptTable) (frame.Frame, erro
 	}
 }
 
+func parseScriptSettings(entries []string) ([]frame.Setting, error) {
+	settings := make([]frame.Setting, 0, len(entries))
+	for _, entry := range entries {
+		key, valueText, ok := strings.Cut(entry, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid setting %q", entry)
+		}
+		settingID, err := parseSettingID(strings.TrimSpace(key))
+		if err != nil {
+			return nil, err
+		}
+		value, err := strconv.ParseUint(strings.TrimSpace(valueText), 0, 32)
+		if err != nil {
+			return nil, err
+		}
+		settings = append(settings, frame.Setting{ID: settingID, Value: uint32(value)})
+	}
+	return settings, nil
+}
+
 func buildHeaderBlock(h2c *client.Client, action scriptTable, headerKey, hexKey string) ([]byte, error) {
 	headers, hasHeaders, err := action.stringListValue(headerKey)
 	if err != nil {
@@ -250,26 +270,6 @@ func buildHeaderBlock(h2c *client.Client, action scriptTable, headerKey, hexKey 
 		fields = append(fields, field)
 	}
 	return h2c.EncodeHeaders(fields)
-}
-
-func parseScriptSettings(entries []string) ([]frame.Setting, error) {
-	settings := make([]frame.Setting, 0, len(entries))
-	for _, entry := range entries {
-		key, valueText, ok := strings.Cut(entry, "=")
-		if !ok {
-			return nil, fmt.Errorf("invalid setting %q", entry)
-		}
-		settingID, err := parseSettingID(strings.TrimSpace(key))
-		if err != nil {
-			return nil, err
-		}
-		value, err := strconv.ParseUint(strings.TrimSpace(valueText), 0, 32)
-		if err != nil {
-			return nil, err
-		}
-		settings = append(settings, frame.Setting{ID: settingID, Value: uint32(value)})
-	}
-	return settings, nil
 }
 
 func parsePriority(action scriptTable) (*frame.PriorityParam, error) {
@@ -313,6 +313,24 @@ func parsePingActionData(action scriptTable) ([8]byte, error) {
 	var payload [8]byte
 	copy(payload[:], raw)
 	return payload, nil
+}
+
+func parseErrorCodeAction(action scriptTable) (frame.ErrorCode, error) {
+	if text, ok, err := action.stringValue("error_code"); err != nil {
+		return 0, err
+	} else if ok {
+		switch strings.ToUpper(text) {
+		case "NO_ERROR":
+			return frame.ErrNo, nil
+		default:
+			value, err := strconv.ParseUint(text, 0, 32)
+			if err != nil {
+				return 0, fmt.Errorf("unknown error code %q", text)
+			}
+			return frame.ErrorCode(value), nil
+		}
+	}
+	return frame.ErrNo, nil
 }
 
 func parseDataField(action scriptTable, textKey, hexKey string) ([]byte, error) {
@@ -384,24 +402,6 @@ func parseSettingID(name string) (frame.SettingID, error) {
 		}
 		return frame.SettingID(value), nil
 	}
-}
-
-func parseErrorCodeAction(action scriptTable) (frame.ErrorCode, error) {
-	if text, ok, err := action.stringValue("error_code"); err != nil {
-		return 0, err
-	} else if ok {
-		switch strings.ToUpper(text) {
-		case "NO_ERROR":
-			return frame.ErrNo, nil
-		default:
-			value, err := strconv.ParseUint(text, 0, 32)
-			if err != nil {
-				return 0, fmt.Errorf("unknown error code %q", text)
-			}
-			return frame.ErrorCode(value), nil
-		}
-	}
-	return frame.ErrNo, nil
 }
 
 var settingsFlagNames = map[string]uint8{
