@@ -46,6 +46,13 @@ formatting that depends on output settings, truncation, decoded headers, or
 warnings in `internal/framefmt` or the CLI output layer; keep HPACK state
 orchestration out of formatter packages.
 
+Typed frame structs should store header metadata in a `FrameHeader Header`
+field rather than duplicating `StreamID` or `Flags` fields. Constructors such as
+`NewXxxFrame` should create complete ordinary headers, including `Type` and
+payload-derived `Length`, while parsed frames should preserve the received wire
+header. Keep deliberately malformed or exact-length frames on the raw path
+(`RawFrameFromExactParts`, `SendRawFrameExact`, and script `raw.length`).
+
 Do not copy or vendor third-party implementation code into this repository.
 When protocol helpers are needed, use Go module dependencies and keep only thin
 local wrappers or adapters here. In particular, do not add files with external
