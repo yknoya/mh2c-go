@@ -86,7 +86,7 @@ func (f HeadersFrame) String() string {
 		priority = "present=<nil>"
 	}
 	return fmt.Sprintf(
-		"HEADERS %s end_stream=%t end_headers=%t block=%d pad=%d priority=%s",
+		"HEADERS %s end_stream=%t end_headers=%t header_block_fragment_bytes=%d pad=%d priority=%s",
 		frameHeader(f),
 		f.Header().Flags&FlagHeadersEndStream != 0,
 		f.Header().Flags&FlagHeadersEndHeaders != 0,

@@ -31,7 +31,7 @@ func (f ContinuationFrame) MarshalBinary() ([]byte, error) {
 }
 
 func (f ContinuationFrame) String() string {
-	return fmt.Sprintf("CONTINUATION %s end_headers=%t block=%d", frameHeader(f), f.Header().Flags&FlagContinuationEndHeaders != 0, len(f.BlockFragment))
+	return fmt.Sprintf("CONTINUATION %s end_headers=%t header_block_fragment_bytes=%d", frameHeader(f), f.Header().Flags&FlagContinuationEndHeaders != 0, len(f.BlockFragment))
 }
 
 func parseContinuationFrame(header Header, payload []byte) (Frame, error) {

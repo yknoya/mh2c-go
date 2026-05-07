@@ -33,18 +33,6 @@ func WriteTextFrame(w io.Writer, opts TextFrame) error {
 	}
 
 	switch typed := opts.Frame.(type) {
-	case frame.SettingsFrame:
-		if len(typed.Settings) == 0 {
-			if _, err := fmt.Fprintln(w, "  settings: <empty>"); err != nil {
-				return err
-			}
-		} else {
-			for _, setting := range typed.Settings {
-				if _, err := fmt.Fprintf(w, "  setting id=%s value=%d\n", setting.ID, setting.Value); err != nil {
-					return err
-				}
-			}
-		}
 	case frame.HeadersFrame:
 		if opts.ShowHeaderBlock {
 			if _, err := fmt.Fprintf(w, "  header-block-fragment: %s\n", HexSummary(typed.BlockFragment, opts.DataLimit)); err != nil {
@@ -67,9 +55,6 @@ func WriteTextFrame(w io.Writer, opts TextFrame) error {
 			}
 		}
 	case frame.DataFrame:
-		if _, err := fmt.Fprintf(w, "  data-length: %d\n", len(typed.Data)); err != nil {
-			return err
-		}
 		if err := writeTextPayload(w, opts.DataFormat, opts.DataLimit, "data", typed.Data); err != nil {
 			return err
 		}

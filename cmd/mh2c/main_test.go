@@ -305,7 +305,7 @@ func TestSendRequestDisplaysSentHeadersAndData(t *testing.T) {
 	if !strings.Contains(text, ">> HEADERS stream=1") {
 		t.Fatalf("output = %q, want sent HEADERS", text)
 	}
-	if !strings.Contains(text, ">> DATA stream=1 len=5 type=DATA(0x00) flags=0x01 end_stream=true data=5") {
+	if !strings.Contains(text, ">> DATA stream=1 len=5 type=DATA(0x00) flags=0x01 end_stream=true data_bytes=5") {
 		t.Fatalf("output = %q, want sent DATA", text)
 	}
 	if !strings.Contains(text, "data-text: \"hello\"") {

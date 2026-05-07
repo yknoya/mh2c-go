@@ -313,10 +313,25 @@ func TestFrameStringIncludesHeaderAndSemantics(t *testing.T) {
 		"DATA stream=1",
 		"len=5",
 		"end_stream=true",
-		"data=5",
+		"data_bytes=5",
 	} {
 		if got := data.String(); !strings.Contains(got, want) {
 			t.Fatalf("DataFrame.String() = %q, want %q", got, want)
 		}
+	}
+
+	headers := NewHeadersFrame(1, FlagHeadersEndHeaders, []byte{0x82, 0x86})
+	if got := headers.String(); !strings.Contains(got, "header_block_fragment_bytes=2") {
+		t.Fatalf("HeadersFrame.String() = %q, want header block fragment byte count", got)
+	}
+
+	continuation := NewContinuationFrame(1, FlagContinuationEndHeaders, []byte{0x82})
+	if got := continuation.String(); !strings.Contains(got, "header_block_fragment_bytes=1") {
+		t.Fatalf("ContinuationFrame.String() = %q, want header block fragment byte count", got)
+	}
+
+	pushPromise := NewPushPromiseFrame(1, FlagPushPromiseEndHeaders, 2, []byte{0x82})
+	if got := pushPromise.String(); !strings.Contains(got, "header_block_fragment_bytes=1") {
+		t.Fatalf("PushPromiseFrame.String() = %q, want header block fragment byte count", got)
 	}
 }

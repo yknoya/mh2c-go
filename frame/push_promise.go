@@ -58,7 +58,7 @@ func (f PushPromiseFrame) MarshalBinary() ([]byte, error) {
 
 func (f PushPromiseFrame) String() string {
 	return fmt.Sprintf(
-		"PUSH_PROMISE %s end_headers=%t promised=%d block=%d pad=%d",
+		"PUSH_PROMISE %s end_headers=%t promised=%d header_block_fragment_bytes=%d pad=%d",
 		frameHeader(f),
 		f.Header().Flags&FlagPushPromiseEndHeaders != 0,
 		f.PromisedStreamID,
