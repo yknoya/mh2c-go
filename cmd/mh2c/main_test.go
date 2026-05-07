@@ -188,7 +188,7 @@ func TestClientFrameEventConsumesContinuation(t *testing.T) {
 	if event.DecodeError != nil {
 		t.Fatalf("TrackReceivedFrame(CONTINUATION) DecodeError = %v", event.DecodeError)
 	}
-	if !event.HeaderBlockComplete || event.StreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
+	if !event.HeaderBlockComplete || event.HeaderBlockStreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
 		t.Fatalf("TrackReceivedFrame(CONTINUATION) = %#v, want decoded headers", event)
 	}
 

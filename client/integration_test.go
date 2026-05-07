@@ -175,16 +175,16 @@ func readResponse(t *testing.T, c *Client, streamID uint32) ([]hpack.HeaderField
 				return nil, nil, event.DecodeError
 			}
 			fields = append(fields, event.Headers...)
-			if event.HeaderBlockComplete && event.EndStream {
+			if event.HeaderBlockComplete && event.HeaderBlockEndStream {
 				return fields, body, nil
 			}
 		case frame.ContinuationFrame:
 			if event.DecodeError != nil {
 				return nil, nil, event.DecodeError
 			}
-			if event.StreamID == streamID {
+			if event.HeaderBlockStreamID == streamID {
 				fields = append(fields, event.Headers...)
-				if event.HeaderBlockComplete && event.EndStream {
+				if event.HeaderBlockComplete && event.HeaderBlockEndStream {
 					return fields, body, nil
 				}
 			}

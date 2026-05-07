@@ -50,7 +50,7 @@ func (o *outputController) captureReceived(event client.FrameEvent) {
 	}
 
 	if event.HeaderBlockComplete && len(event.Headers) > 0 {
-		o.capture.RecordHeaders(event.StreamID, event.Headers, event.EndStream)
+		o.capture.RecordHeaders(event.HeaderBlockStreamID, event.Headers, event.HeaderBlockEndStream)
 	}
 
 	if typed, ok := event.Frame.(frame.DataFrame); ok {

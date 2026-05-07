@@ -7,13 +7,20 @@ import (
 	"github.com/yknoya/mh2c-go/hpack"
 )
 
-// FrameEvent is a frame plus any header fields decoded while tracking it.
+// FrameEvent is a frame plus header fields decoded while tracking header blocks.
 type FrameEvent struct {
-	Frame               frame.Frame
-	Headers             []hpack.HeaderField
-	Warnings            []string
-	StreamID            uint32
-	EndStream           bool
+	Frame frame.Frame
+	// Headers contains decoded header fields when HeaderBlockComplete is true.
+	Headers []hpack.HeaderField
+	// Warnings contains non-fatal decode warnings for a completed header block.
+	Warnings []string
+	// HeaderBlockStreamID is set when HeaderBlockComplete is true. It identifies
+	// the stream for the completed HEADERS/PUSH_PROMISE + CONTINUATION sequence.
+	HeaderBlockStreamID uint32
+	// HeaderBlockEndStream is set when HeaderBlockComplete is true. It reflects
+	// END_STREAM on the initial HEADERS frame, not on a CONTINUATION frame.
+	HeaderBlockEndStream bool
+	// HeaderBlockComplete reports that this event completed a header block.
 	HeaderBlockComplete bool
 	DecodeError         error
 }
@@ -76,8 +83,8 @@ func (t *headerBlockTracker) consumeHeaderStart(event FrameEvent, streamID uint3
 
 func (t *headerBlockTracker) finish(event FrameEvent, streamID uint32, endStream bool, block []byte, decode func([]byte) (hpack.DecodeReport, error)) FrameEvent {
 	event.HeaderBlockComplete = true
-	event.StreamID = streamID
-	event.EndStream = endStream
+	event.HeaderBlockStreamID = streamID
+	event.HeaderBlockEndStream = endStream
 	report, err := decode(block)
 	if err != nil {
 		event.DecodeError = err

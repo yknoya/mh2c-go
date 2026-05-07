@@ -226,7 +226,7 @@ func TestReceiveFrameEventDecodesSplitHeaders(t *testing.T) {
 	if event.DecodeError != nil {
 		t.Fatalf("FrameEvent.DecodeError = %v", event.DecodeError)
 	}
-	if !event.HeaderBlockComplete || event.StreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
+	if !event.HeaderBlockComplete || event.HeaderBlockStreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
 		t.Fatalf("CONTINUATION event = %#v, want decoded headers", event)
 	}
 }

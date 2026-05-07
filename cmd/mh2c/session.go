@@ -97,7 +97,7 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputContr
 		if event.DecodeError != nil {
 			return sawGoAway, event.DecodeError
 		}
-		if event.HeaderBlockComplete && event.StreamID == streamID && event.EndStream {
+		if event.HeaderBlockComplete && event.HeaderBlockStreamID == streamID && event.HeaderBlockEndStream {
 			return sawGoAway, nil
 		}
 		if typed, ok := event.Frame.(frame.DataFrame); ok && typed.Header().StreamID == streamID && typed.Header().Flags&frame.FlagDataEndStream != 0 {

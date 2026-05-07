@@ -60,7 +60,7 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 		if event.DecodeError != nil {
 			return sawGoAway, event.DecodeError
 		}
-		if event.HeaderBlockComplete && until == "end_stream" && hasStreamID && event.StreamID == streamID && event.EndStream {
+		if event.HeaderBlockComplete && until == "end_stream" && hasStreamID && event.HeaderBlockStreamID == streamID && event.HeaderBlockEndStream {
 			return sawGoAway, nil
 		}
 

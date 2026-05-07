@@ -275,14 +275,14 @@ func TestClientFrameEventTracksHeaderBlockCompleteForDisplay(t *testing.T) {
 	if event.DecodeError != nil {
 		t.Fatalf("TrackReceivedFrame(HEADERS) DecodeError = %v", event.DecodeError)
 	}
-	if event.HeaderBlockComplete || len(event.Headers) != 0 || event.StreamID != 0 || event.EndStream {
+	if event.HeaderBlockComplete || len(event.Headers) != 0 || event.HeaderBlockStreamID != 0 || event.HeaderBlockEndStream {
 		t.Fatalf("HEADERS event = %#v", event)
 	}
 	event = h2c.TrackReceivedFrame(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[len(block)/2:]))
 	if event.DecodeError != nil {
 		t.Fatalf("TrackReceivedFrame(CONTINUATION) DecodeError = %v", event.DecodeError)
 	}
-	if event.StreamID != 1 || len(event.Warnings) != 0 || event.EndStream || fieldValue(event.Headers, ":status") != "200" {
+	if event.HeaderBlockStreamID != 1 || len(event.Warnings) != 0 || event.HeaderBlockEndStream || fieldValue(event.Headers, ":status") != "200" {
 		t.Fatalf("event = %#v", event)
 	}
 }
