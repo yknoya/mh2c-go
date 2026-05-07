@@ -32,17 +32,16 @@ func TestOutputControllerAppliesFrameStreamAndDirectionFilters(t *testing.T) {
 		t.Fatalf("newOutputController() error = %v", err)
 	}
 
-	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleSent(h2c, frame.NewDataFrame(1, 0, []byte("sent"))); err != nil {
+	if err := controller.HandleSent(client.FrameEvent{Frame: frame.NewDataFrame(1, 0, []byte("sent"))}); err != nil {
 		t.Fatalf("HandleSent(data stream=1) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewSettingsFrame(0, nil)); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewSettingsFrame(0, nil)}); err != nil {
 		t.Fatalf("HandleReceived(settings) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewDataFrame(3, 0, []byte("skip"))); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewDataFrame(3, 0, []byte("skip"))}); err != nil {
 		t.Fatalf("HandleReceived(data stream=3) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewDataFrame(1, 0, []byte("keep"))); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewDataFrame(1, 0, []byte("keep"))}); err != nil {
 		t.Fatalf("HandleReceived(data stream=1) error = %v", err)
 	}
 
@@ -81,7 +80,7 @@ func TestOutputControllerDisplaysDecodedSentHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodeHeaders() error = %v", err)
 	}
-	if err := controller.HandleSent(h2c, frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream, block)); err != nil {
+	if err := controller.HandleSent(h2c.TrackSentFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream, block))); err != nil {
 		t.Fatalf("HandleSent(headers) error = %v", err)
 	}
 
@@ -117,7 +116,7 @@ func TestOutputControllerJSONLIncludesDecodedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream, block)); err != nil {
+	if err := controller.HandleReceived(h2c.TrackReceivedFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders|frame.FlagHeadersEndStream, block))); err != nil {
 		t.Fatalf("HandleReceived() error = %v", err)
 	}
 
@@ -147,8 +146,7 @@ func TestOutputControllerJSONLMarksTruncatedDataTextSafely(t *testing.T) {
 		t.Fatalf("newOutputController() error = %v", err)
 	}
 
-	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleReceived(h2c, frame.NewDataFrame(1, 0, []byte("あい"))); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewDataFrame(1, 0, []byte("あい"))}); err != nil {
 		t.Fatalf("HandleReceived(data) error = %v", err)
 	}
 
@@ -188,7 +186,7 @@ func TestOutputControllerJSONLMarksTruncatedHeaderBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, block)); err != nil {
+	if err := controller.HandleReceived(h2c.TrackReceivedFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, block))); err != nil {
 		t.Fatalf("HandleReceived(headers) error = %v", err)
 	}
 
@@ -221,7 +219,7 @@ func TestOutputControllerJSONLRejectsInvalidHPACKBlock(t *testing.T) {
 	}
 
 	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	err = controller.HandleReceived(h2c, frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, buildInvalidHeaderBlock(t)))
+	err = controller.HandleReceived(h2c.TrackReceivedFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, buildInvalidHeaderBlock(t))))
 	if err == nil {
 		t.Fatal("HandleReceived(headers) error = nil, want HPACK decode error")
 	}
@@ -259,10 +257,10 @@ func TestOutputControllerFlushesAutoCapturedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode() error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewHeadersFrame(3, frame.FlagHeadersEndHeaders, block)); err != nil {
+	if err := controller.HandleReceived(h2c.TrackReceivedFrame(frame.NewHeadersFrame(3, frame.FlagHeadersEndHeaders, block))); err != nil {
 		t.Fatalf("HandleReceived(headers) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewDataFrame(3, frame.FlagDataEndStream, []byte("hello"))); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewDataFrame(3, frame.FlagDataEndStream, []byte("hello"))}); err != nil {
 		t.Fatalf("HandleReceived(data) error = %v", err)
 	}
 	if err := controller.Flush(); err != nil {
@@ -303,18 +301,17 @@ func TestOutputControllerFiltersPushPromiseAndRawFrames(t *testing.T) {
 		t.Fatalf("newOutputController() error = %v", err)
 	}
 
-	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
-	if err := controller.HandleReceived(h2c, frame.NewPushPromiseFrame(1, frame.FlagPushPromiseEndHeaders, 2, []byte{0x82})); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewPushPromiseFrame(1, frame.FlagPushPromiseEndHeaders, 2, []byte{0x82})}); err != nil {
 		t.Fatalf("HandleReceived(push_promise) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.RawFrameFromParts(frame.Header{
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.RawFrameFromParts(frame.Header{
 		Type:     frame.Type(0xfe),
 		Flags:    0x3,
 		StreamID: 1,
-	}, []byte{0xde, 0xad, 0xbe, 0xef})); err != nil {
+	}, []byte{0xde, 0xad, 0xbe, 0xef})}); err != nil {
 		t.Fatalf("HandleReceived(raw) error = %v", err)
 	}
-	if err := controller.HandleReceived(h2c, frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, []byte{0x80})); err != nil {
+	if err := controller.HandleReceived(client.FrameEvent{Frame: frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, []byte{0x80})}); err != nil {
 		t.Fatalf("HandleReceived(continuation) error = %v", err)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -60,7 +59,7 @@ func TestHTTP2RoundTripAgainstTLSServer(t *testing.T) {
 	if err := c.SendConnectionPreface(); err != nil {
 		t.Fatalf("SendConnectionPreface() error = %v", err)
 	}
-	if err := c.SendFrame(frame.NewSettingsFrame(0, []frame.Setting{
+	if _, err := c.SendFrame(frame.NewSettingsFrame(0, []frame.Setting{
 		{ID: frame.SettingEnablePush, Value: 0},
 		{ID: frame.SettingInitialWindowSize, Value: 65535},
 	})); err != nil {
@@ -82,10 +81,10 @@ func TestHTTP2RoundTripAgainstTLSServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodeHeaders() error = %v", err)
 	}
-	if err := c.SendFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, block)); err != nil {
+	if _, err := c.SendFrame(frame.NewHeadersFrame(1, frame.FlagHeadersEndHeaders, block)); err != nil {
 		t.Fatalf("SendFrame(HEADERS) error = %v", err)
 	}
-	if err := c.SendFrame(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello"))); err != nil {
+	if _, err := c.SendFrame(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello"))); err != nil {
 		t.Fatalf("SendFrame(DATA) error = %v", err)
 	}
 
@@ -133,18 +132,19 @@ func acknowledgePeerSettings(t *testing.T, c *Client) error {
 	t.Helper()
 
 	for {
-		f, err := c.ReceiveFrame()
+		event, err := c.ReceiveFrame()
 		if err != nil {
 			return err
 		}
-		settings, ok := f.(frame.SettingsFrame)
+		settings, ok := event.Frame.(frame.SettingsFrame)
 		if !ok {
 			continue
 		}
 		if settings.Header().Flags&frame.FlagSettingsAck != 0 {
 			continue
 		}
-		return c.SendFrame(frame.NewSettingsFrame(frame.FlagSettingsAck, nil))
+		_, err = c.SendFrame(frame.NewSettingsFrame(frame.FlagSettingsAck, nil))
+		return err
 	}
 }
 
@@ -156,14 +156,14 @@ func readResponse(t *testing.T, c *Client, streamID uint32) ([]hpack.HeaderField
 		body   []byte
 	)
 	for {
-		f, err := c.ReceiveFrame()
+		event, err := c.ReceiveFrame()
 		if err != nil {
 			return nil, nil, err
 		}
-		switch typed := f.(type) {
+		switch typed := event.Frame.(type) {
 		case frame.SettingsFrame:
 			if typed.Header().Flags&frame.FlagSettingsAck == 0 {
-				if err := c.SendFrame(frame.NewSettingsFrame(frame.FlagSettingsAck, nil)); err != nil {
+				if _, err := c.SendFrame(frame.NewSettingsFrame(frame.FlagSettingsAck, nil)); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -171,16 +171,23 @@ func readResponse(t *testing.T, c *Client, streamID uint32) ([]hpack.HeaderField
 			if typed.Header().StreamID != streamID {
 				continue
 			}
-			decoded, err := c.DecodeHeaders(typed.BlockFragment)
-			if err != nil {
-				return nil, nil, err
+			if event.DecodeError != nil {
+				return nil, nil, event.DecodeError
 			}
-			fields = append(fields, decoded...)
-			if typed.Header().Flags&frame.FlagHeadersEndStream != 0 {
+			fields = append(fields, event.Headers...)
+			if event.HeaderBlockComplete && event.EndStream {
 				return fields, body, nil
 			}
 		case frame.ContinuationFrame:
-			return nil, nil, fmt.Errorf("unexpected CONTINUATION frame on stream %d", typed.Header().StreamID)
+			if event.DecodeError != nil {
+				return nil, nil, event.DecodeError
+			}
+			if event.StreamID == streamID {
+				fields = append(fields, event.Headers...)
+				if event.HeaderBlockComplete && event.EndStream {
+					return fields, body, nil
+				}
+			}
 		case frame.DataFrame:
 			if typed.Header().StreamID != streamID {
 				continue

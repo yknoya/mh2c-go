@@ -46,34 +46,33 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 	var (
 		receivedCount int64
 		sawGoAway     bool
-		pendingStream uint32
-		pendingBlock  []byte
-		pendingEnd    bool
 	)
 
 	for {
-		received, err := h2c.ReceiveFrame()
+		event, err := h2c.ReceiveFrame()
 		if err != nil {
 			return sawGoAway, err
 		}
 		receivedCount++
-		if err := out.HandleReceived(h2c, received); err != nil {
+		if err := out.HandleReceived(event); err != nil {
 			return sawGoAway, err
 		}
-		if headers, _, stream, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, received, h2c.DecodeHeadersDetailed); err != nil {
-			return sawGoAway, err
-		} else if len(headers) > 0 && until == "end_stream" && hasStreamID && stream == streamID && endStream {
+		if event.DecodeError != nil {
+			return sawGoAway, event.DecodeError
+		}
+		if event.HeaderBlockComplete && until == "end_stream" && hasStreamID && event.StreamID == streamID && event.EndStream {
 			return sawGoAway, nil
 		}
 
-		switch typed := received.(type) {
+		switch typed := event.Frame.(type) {
 		case frame.SettingsFrame:
 			if ackSettings && typed.Header().Flags&frame.FlagSettingsAck == 0 {
 				ack := frame.NewSettingsFrame(frame.FlagSettingsAck, nil)
-				if err := h2c.SendFrame(ack); err != nil {
+				ackEvent, err := h2c.SendFrame(ack)
+				if err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(h2c, ack); err != nil {
+				if err := out.HandleSent(ackEvent); err != nil {
 					return sawGoAway, err
 				}
 			}
@@ -86,10 +85,11 @@ func executeReceiveAction(h2c *client.Client, action scriptTable, out *outputCon
 		case frame.PingFrame:
 			if ackPing && typed.Header().Flags&frame.FlagPingAck == 0 {
 				ack := frame.NewPingFrame(frame.FlagPingAck, typed.Data)
-				if err := h2c.SendFrame(ack); err != nil {
+				ackEvent, err := h2c.SendFrame(ack)
+				if err != nil {
 					return sawGoAway, err
 				}
-				if err := out.HandleSent(h2c, ack); err != nil {
+				if err := out.HandleSent(ackEvent); err != nil {
 					return sawGoAway, err
 				}
 			}

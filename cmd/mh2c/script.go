@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/yknoya/mh2c-go/client"
-	"github.com/yknoya/mh2c-go/frame"
 )
 
 type scriptFile struct {
@@ -113,11 +112,11 @@ func executeScript(h2c *client.Client, script scriptFile, out *outputController)
 			if err != nil {
 				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
 			}
-			if err := h2c.SendFrame(sent); err != nil {
+			event, err := h2c.SendFrame(sent)
+			if err != nil {
 				return sawGoAway, err
 			}
-			applySentFrame(h2c, sent)
-			if err := out.HandleSent(h2c, sent); err != nil {
+			if err := out.HandleSent(event); err != nil {
 				return sawGoAway, err
 			}
 		}
@@ -138,15 +137,4 @@ func parseSleepDuration(action scriptTable) (time.Duration, error) {
 		return 0, fmt.Errorf("duration_ms must be > 0")
 	}
 	return time.Duration(durationMS) * time.Millisecond, nil
-}
-
-func applySentFrame(h2c *client.Client, sent frame.Frame) {
-	switch typed := sent.(type) {
-	case frame.SettingsFrame:
-		for _, setting := range typed.Settings {
-			if setting.ID == frame.SettingHeaderTableSize {
-				h2c.ResponseCodec().SetDecoderAllowedMaxDynamicTableSize(setting.Value)
-			}
-		}
-	}
 }

@@ -163,11 +163,11 @@ func TestBuildRequestFieldsAddsContentLength(t *testing.T) {
 	}
 }
 
-func TestResponseStateConsumesContinuation(t *testing.T) {
+func TestClientFrameEventConsumesContinuation(t *testing.T) {
 	t.Parallel()
 
-	codec := hpack.NewCodec(4096)
-	block, err := codec.Encode([]hpack.HeaderField{
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	block, err := h2c.ResponseCodec().Encode([]hpack.HeaderField{
 		{Name: ":status", Value: "200"},
 		{Name: "content-type", Value: "text/plain"},
 	})
@@ -175,30 +175,26 @@ func TestResponseStateConsumesContinuation(t *testing.T) {
 		t.Fatalf("Encode() error = %v", err)
 	}
 	split := len(block) / 2
-	state := responseState{streamID: 1}
 
-	result, err := state.Consume(frame.NewHeadersFrame(1, 0, block[:split]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(HEADERS) error = %v", err)
+	event := h2c.TrackReceivedFrame(frame.NewHeadersFrame(1, 0, block[:split]))
+	if event.DecodeError != nil {
+		t.Fatalf("TrackReceivedFrame(HEADERS) DecodeError = %v", event.DecodeError)
 	}
-	if len(result.headers) != 0 || result.done {
-		t.Fatalf("Consume(HEADERS) = %#v, want pending state", result)
-	}
-
-	result, err = state.Consume(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(CONTINUATION) error = %v", err)
-	}
-	if fieldValue(result.headers, ":status") != "200" {
-		t.Fatalf(":status = %q, want 200", fieldValue(result.headers, ":status"))
+	if event.HeaderBlockComplete || len(event.Headers) != 0 {
+		t.Fatalf("TrackReceivedFrame(HEADERS) = %#v, want pending state", event)
 	}
 
-	result, err = state.Consume(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("Consume(DATA) error = %v", err)
+	event = h2c.TrackReceivedFrame(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]))
+	if event.DecodeError != nil {
+		t.Fatalf("TrackReceivedFrame(CONTINUATION) DecodeError = %v", event.DecodeError)
 	}
-	if !result.done || !bytes.Equal(result.data, []byte("hello")) {
-		t.Fatalf("Consume(DATA) = %#v, want done with hello", result)
+	if !event.HeaderBlockComplete || event.StreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
+		t.Fatalf("TrackReceivedFrame(CONTINUATION) = %#v, want decoded headers", event)
+	}
+
+	event = h2c.TrackReceivedFrame(frame.NewDataFrame(1, frame.FlagDataEndStream, []byte("hello")))
+	if event.DecodeError != nil || event.HeaderBlockComplete {
+		t.Fatalf("TrackReceivedFrame(DATA) = %#v, want non-header event", event)
 	}
 }
 

@@ -24,15 +24,15 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 	}
 
 	for {
-		f, err := h2c.ReceiveFrame()
+		event, err := h2c.ReceiveFrame()
 		if err != nil {
 			return err
 		}
-		if err := out.HandleReceived(h2c, f); err != nil {
+		if err := out.HandleReceived(event); err != nil {
 			return err
 		}
 
-		switch typed := f.(type) {
+		switch typed := event.Frame.(type) {
 		case frame.SettingsFrame:
 			if typed.Header().Flags&frame.FlagSettingsAck != 0 {
 				continue
@@ -53,10 +53,11 @@ func startSession(h2c *client.Client, maxTable uint32, out *outputController) er
 }
 
 func sendFrameAndReport(h2c *client.Client, out *outputController, f frame.Frame) error {
-	if err := h2c.SendFrame(f); err != nil {
+	event, err := h2c.SendFrame(f)
+	if err != nil {
 		return err
 	}
-	return out.HandleSent(h2c, f)
+	return out.HandleSent(event)
 }
 
 func ackControlFrame(h2c *client.Client, out *outputController, f frame.Frame) error {
@@ -74,31 +75,32 @@ func ackControlFrame(h2c *client.Client, out *outputController, f frame.Frame) e
 }
 
 func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputController) (bool, error) {
-	state := responseState{streamID: streamID}
 	sawGoAway := false
 
 	for {
-		f, err := h2c.ReceiveFrame()
+		event, err := h2c.ReceiveFrame()
 		if err != nil {
 			return sawGoAway, err
 		}
-		if err := out.HandleReceived(h2c, f); err != nil {
+		if err := out.HandleReceived(event); err != nil {
 			return sawGoAway, err
 		}
-		if err := ackControlFrame(h2c, out, f); err != nil {
+		if err := ackControlFrame(h2c, out, event.Frame); err != nil {
 			return sawGoAway, err
 		}
 
-		if _, ok := f.(frame.GoAwayFrame); ok {
+		if _, ok := event.Frame.(frame.GoAwayFrame); ok {
 			sawGoAway = true
 			return sawGoAway, nil
 		}
 
-		result, err := state.Consume(f, h2c.DecodeHeadersDetailed)
-		if err != nil {
-			return sawGoAway, err
+		if event.DecodeError != nil {
+			return sawGoAway, event.DecodeError
 		}
-		if result.done {
+		if event.HeaderBlockComplete && event.StreamID == streamID && event.EndStream {
+			return sawGoAway, nil
+		}
+		if typed, ok := event.Frame.(frame.DataFrame); ok && typed.Header().StreamID == streamID && typed.Header().Flags&frame.FlagDataEndStream != 0 {
 			return sawGoAway, nil
 		}
 	}
@@ -107,18 +109,18 @@ func receiveResponseFrames(h2c *client.Client, streamID uint32, out *outputContr
 func receivePingFrames(h2c *client.Client, want [8]byte, out *outputController) (bool, error) {
 	sawGoAway := false
 	for {
-		f, err := h2c.ReceiveFrame()
+		event, err := h2c.ReceiveFrame()
 		if err != nil {
 			return sawGoAway, err
 		}
-		if err := out.HandleReceived(h2c, f); err != nil {
+		if err := out.HandleReceived(event); err != nil {
 			return sawGoAway, err
 		}
-		if err := ackControlFrame(h2c, out, f); err != nil {
+		if err := ackControlFrame(h2c, out, event.Frame); err != nil {
 			return sawGoAway, err
 		}
 
-		switch typed := f.(type) {
+		switch typed := event.Frame.(type) {
 		case frame.PingFrame:
 			if typed.Header().Flags&frame.FlagPingAck == 0 {
 				continue
@@ -141,19 +143,19 @@ func receiveObserveFrames(h2c *client.Client, maxRecv uint, out *outputControlle
 		if maxRecv > 0 && received >= maxRecv {
 			return sawGoAway, nil
 		}
-		f, err := h2c.ReceiveFrame()
+		event, err := h2c.ReceiveFrame()
 		if err != nil {
 			return sawGoAway, err
 		}
 		received++
-		if err := out.HandleReceived(h2c, f); err != nil {
+		if err := out.HandleReceived(event); err != nil {
 			return sawGoAway, err
 		}
-		if err := ackControlFrame(h2c, out, f); err != nil {
+		if err := ackControlFrame(h2c, out, event.Frame); err != nil {
 			return sawGoAway, err
 		}
 
-		if _, ok := f.(frame.GoAwayFrame); ok {
+		if _, ok := event.Frame.(frame.GoAwayFrame); ok {
 			sawGoAway = true
 			return sawGoAway, nil
 		}

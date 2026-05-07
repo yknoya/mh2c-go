@@ -48,9 +48,11 @@ func WithMaxDynamicTableSize(v uint32) Option {
 }
 
 type Client struct {
-	conn          io.ReadWriteCloser
-	requestCodec  *hpack.Codec
-	responseCodec *hpack.Codec
+	conn                io.ReadWriteCloser
+	requestCodec        *hpack.Codec
+	responseCodec       *hpack.Codec
+	sentHeaderBlock     headerBlockTracker
+	receivedHeaderBlock headerBlockTracker
 }
 
 func New(ctx context.Context, host string, port uint16, opts ...Option) (*Client, error) {
@@ -119,12 +121,16 @@ func (c *Client) SendConnectionPreface() error {
 	return c.SendRaw([]byte(ConnectionPreface))
 }
 
-func (c *Client) SendFrame(f frame.Frame) error {
+func (c *Client) SendFrame(f frame.Frame) (FrameEvent, error) {
 	raw, err := f.MarshalBinary()
 	if err != nil {
-		return err
+		return FrameEvent{}, err
 	}
-	return c.SendRaw(raw)
+	if err := c.SendRaw(raw); err != nil {
+		return FrameEvent{}, err
+	}
+	c.applySentFrame(f)
+	return c.TrackSentFrame(f), nil
 }
 
 func (c *Client) SendRawFrame(header frame.Header, payload []byte) error {
@@ -142,25 +148,25 @@ func (c *Client) SendRawFrameExact(header frame.Header, payload []byte) error {
 	return c.SendRaw(append(head, payload...))
 }
 
-func (c *Client) ReceiveFrame() (frame.Frame, error) {
+func (c *Client) ReceiveFrame() (FrameEvent, error) {
 	headBytes, err := c.ReceiveRaw(wire.FrameHeaderLength)
 	if err != nil {
-		return nil, err
+		return FrameEvent{}, err
 	}
 	header, err := frame.ParseHeader(headBytes)
 	if err != nil {
-		return nil, err
+		return FrameEvent{}, err
 	}
 	payload, err := c.ReceiveRaw(int(header.Length))
 	if err != nil {
-		return nil, err
+		return FrameEvent{}, err
 	}
 	f, err := frame.Unmarshal(header, payload)
 	if err != nil {
-		return nil, err
+		return FrameEvent{}, err
 	}
 	c.applyFrame(f)
-	return f, nil
+	return c.TrackReceivedFrame(f), nil
 }
 
 func (c *Client) EncodeHeaders(fields []hpack.HeaderField) ([]byte, error) {
@@ -189,6 +195,17 @@ func (c *Client) applyFrame(f frame.Frame) {
 		for _, setting := range typed.Settings {
 			if setting.ID == frame.SettingHeaderTableSize {
 				c.requestCodec.SetMaxDynamicTableSize(setting.Value)
+			}
+		}
+	}
+}
+
+func (c *Client) applySentFrame(f frame.Frame) {
+	switch typed := f.(type) {
+	case frame.SettingsFrame:
+		for _, setting := range typed.Settings {
+			if setting.ID == frame.SettingHeaderTableSize {
+				c.responseCodec.SetDecoderAllowedMaxDynamicTableSize(setting.Value)
 			}
 		}
 	}

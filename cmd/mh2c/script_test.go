@@ -259,11 +259,11 @@ func TestBuildScriptFrameRawWithExactLength(t *testing.T) {
 	}
 }
 
-func TestConsumeHeaderBlockForDisplay(t *testing.T) {
+func TestClientFrameEventTracksHeaderBlockCompleteForDisplay(t *testing.T) {
 	t.Parallel()
 
-	codec := hpack.NewCodec(4096)
-	block, err := codec.Encode([]hpack.HeaderField{
+	h2c := client.NewWithConn(nopConn{}, client.WithMaxDynamicTableSize(4096))
+	block, err := h2c.ResponseCodec().Encode([]hpack.HeaderField{
 		{Name: ":status", Value: "200"},
 		{Name: "content-type", Value: "text/plain"},
 	})
@@ -271,24 +271,19 @@ func TestConsumeHeaderBlockForDisplay(t *testing.T) {
 		t.Fatalf("Encode() error = %v", err)
 	}
 
-	var (
-		pendingStream uint32
-		pendingBlock  []byte
-		pendingEnd    bool
-	)
-	headers, warnings, streamID, endStream, err := consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.NewHeadersFrame(1, 0, block[:len(block)/2]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("consumeHeaderBlockForDisplay(HEADERS) error = %v", err)
+	event := h2c.TrackReceivedFrame(frame.NewHeadersFrame(1, 0, block[:len(block)/2]))
+	if event.DecodeError != nil {
+		t.Fatalf("TrackReceivedFrame(HEADERS) DecodeError = %v", event.DecodeError)
 	}
-	if len(headers) != 0 || len(warnings) != 0 || streamID != 0 || endStream {
-		t.Fatalf("HEADERS result = %#v, %#v, %d, %t", headers, warnings, streamID, endStream)
+	if event.HeaderBlockComplete || len(event.Headers) != 0 || event.StreamID != 0 || event.EndStream {
+		t.Fatalf("HEADERS event = %#v", event)
 	}
-	headers, warnings, streamID, endStream, err = consumeHeaderBlockForDisplay(&pendingStream, &pendingBlock, &pendingEnd, frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[len(block)/2:]), codec.DecodeDetailed)
-	if err != nil {
-		t.Fatalf("consumeHeaderBlockForDisplay(CONTINUATION) error = %v", err)
+	event = h2c.TrackReceivedFrame(frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[len(block)/2:]))
+	if event.DecodeError != nil {
+		t.Fatalf("TrackReceivedFrame(CONTINUATION) DecodeError = %v", event.DecodeError)
 	}
-	if streamID != 1 || len(warnings) != 0 || endStream || fieldValue(headers, ":status") != "200" {
-		t.Fatalf("headers = %#v, warnings = %#v, streamID = %d, endStream = %t", headers, warnings, streamID, endStream)
+	if event.StreamID != 1 || len(event.Warnings) != 0 || event.EndStream || fieldValue(event.Headers, ":status") != "200" {
+		t.Fatalf("event = %#v", event)
 	}
 }
 

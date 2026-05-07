@@ -5,7 +5,6 @@ import (
 	"io"
 
 	"github.com/yknoya/mh2c-go/client"
-	"github.com/yknoya/mh2c-go/frame"
 	"github.com/yknoya/mh2c-go/hpack"
 )
 
@@ -19,23 +18,17 @@ const (
 )
 
 type outputController struct {
-	out               io.Writer
-	format            string
-	dataFormat        string
-	dataLimit         uint
-	decodeHeaders     bool
-	showHeaderBlock   bool
-	frameFilters      map[string]bool
-	directionFilter   map[string]bool
-	hasStreamFilter   bool
-	streamFilter      uint32
-	sentPendingStream uint32
-	sentPendingBlock  []byte
-	sentPendingEnd    bool
-	pendingStream     uint32
-	pendingBlock      []byte
-	pendingEnd        bool
-	capture           *captureManager
+	out             io.Writer
+	format          string
+	dataFormat      string
+	dataLimit       uint
+	decodeHeaders   bool
+	showHeaderBlock bool
+	frameFilters    map[string]bool
+	directionFilter map[string]bool
+	hasStreamFilter bool
+	streamFilter    uint32
+	capture         *captureManager
 }
 
 func newOutputController(out io.Writer, cfg config) (*outputController, error) {
@@ -98,30 +91,30 @@ func (o *outputController) PrintNotice(direction, kind, summary string) error {
 	return err
 }
 
-func (o *outputController) HandleSent(h2c *client.Client, f frame.Frame) error {
-	headers, warnings := o.decodeSentHeaders(h2c, f)
-	if !o.shouldDisplay("sent", f) {
+func (o *outputController) HandleSent(event client.FrameEvent) error {
+	headers, warnings := o.sentHeaders(event)
+	if !o.shouldDisplay("sent", event.Frame) {
 		return nil
 	}
 	if o.format == outputFormatJSONL {
-		return o.writeJSON(o.buildJSONEvent("sent", f, headers, warnings))
+		return o.writeJSON(o.buildJSONEvent("sent", event.Frame, headers, warnings))
 	}
-	return o.writeTextFrame(">>", f, headers, warnings)
+	return o.writeTextFrame(">>", event.Frame, headers, warnings)
 }
 
-func (o *outputController) HandleReceived(h2c *client.Client, f frame.Frame) error {
-	headers, warnings, streamID, endStream, err := o.decodeReceivedHeaders(h2c, f)
-	if err != nil {
-		return err
+func (o *outputController) HandleReceived(event client.FrameEvent) error {
+	if event.DecodeError != nil && (o.decodeHeaders || o.capture != nil) {
+		return event.DecodeError
 	}
-	o.captureReceived(streamID, headers, endStream, f)
-	if !o.shouldDisplay("received", f) {
+	o.captureReceived(event)
+	headers, warnings := o.receivedHeaders(event)
+	if !o.shouldDisplay("received", event.Frame) {
 		return nil
 	}
 	if o.format == outputFormatJSONL {
-		return o.writeJSON(o.buildJSONEvent("received", f, headers, warnings))
+		return o.writeJSON(o.buildJSONEvent("received", event.Frame, headers, warnings))
 	}
-	return o.writeTextFrame("<<", f, headers, warnings)
+	return o.writeTextFrame("<<", event.Frame, headers, warnings)
 }
 
 func (o *outputController) Flush() error {
@@ -131,68 +124,20 @@ func (o *outputController) Flush() error {
 	return o.capture.Flush()
 }
 
-func (o *outputController) decodeSentHeaders(h2c *client.Client, f frame.Frame) ([]hpack.HeaderField, []string) {
-	if !o.decodeHeaders || h2c == nil {
+func (o *outputController) sentHeaders(event client.FrameEvent) ([]hpack.HeaderField, []string) {
+	if !o.decodeHeaders {
 		return nil, nil
 	}
-
-	headers, warnings, _, _, err := consumeHeaderBlockForDisplay(
-		&o.sentPendingStream,
-		&o.sentPendingBlock,
-		&o.sentPendingEnd,
-		f,
-		h2c.RequestCodec().DecodeDetailed,
-	)
-	if err != nil {
-		o.sentPendingStream = 0
-		o.sentPendingBlock = nil
-		o.sentPendingEnd = false
-		return nil, []string{fmt.Sprintf("sent header decode skipped: %v", err)}
+	warnings := append([]string(nil), event.Warnings...)
+	if event.DecodeError != nil {
+		warnings = append(warnings, fmt.Sprintf("sent header decode skipped: %v", event.DecodeError))
 	}
-	if len(headers) > 0 {
-		return headers, warnings
-	}
-
-	typed, ok := f.(frame.PushPromiseFrame)
-	if !ok || typed.Header().Flags&frame.FlagPushPromiseEndHeaders == 0 {
-		return nil, nil
-	}
-	report, err := h2c.RequestCodec().DecodeDetailed(typed.BlockFragment)
-	if err != nil {
-		return nil, []string{fmt.Sprintf("sent header decode skipped: %v", err)}
-	}
-	return report.Fields, report.Warnings
+	return event.Headers, warnings
 }
 
-func (o *outputController) decodeReceivedHeaders(h2c *client.Client, f frame.Frame) ([]hpack.HeaderField, []string, uint32, bool, error) {
-	needTrackedDecode := o.decodeHeaders || o.capture != nil
-	if needTrackedDecode {
-		headers, warnings, streamID, endStream, err := consumeHeaderBlockForDisplay(
-			&o.pendingStream,
-			&o.pendingBlock,
-			&o.pendingEnd,
-			f,
-			h2c.DecodeHeadersDetailed,
-		)
-		if err != nil {
-			return nil, nil, 0, false, err
-		}
-		if len(headers) > 0 {
-			return headers, warnings, streamID, endStream, nil
-		}
-	}
-
+func (o *outputController) receivedHeaders(event client.FrameEvent) ([]hpack.HeaderField, []string) {
 	if !o.decodeHeaders {
-		return nil, nil, 0, false, nil
+		return nil, nil
 	}
-
-	typed, ok := f.(frame.PushPromiseFrame)
-	if !ok || typed.Header().Flags&frame.FlagPushPromiseEndHeaders == 0 {
-		return nil, nil, 0, false, nil
-	}
-	report, err := h2c.DecodeHeadersDetailed(typed.BlockFragment)
-	if err != nil {
-		return nil, nil, 0, false, err
-	}
-	return report.Fields, report.Warnings, typed.Header().StreamID, false, nil
+	return event.Headers, event.Warnings
 }

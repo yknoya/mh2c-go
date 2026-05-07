@@ -47,13 +47,13 @@ func TestSendAndReceiveFrame(t *testing.T) {
 		_, _ = right.Write(raw)
 	}()
 
-	got, err := c.ReceiveFrame()
+	event, err := c.ReceiveFrame()
 	if err != nil {
 		t.Fatalf("ReceiveFrame() error = %v", err)
 	}
-	typed, ok := got.(frame.SettingsFrame)
+	typed, ok := event.Frame.(frame.SettingsFrame)
 	if !ok {
-		t.Fatalf("ReceiveFrame() type = %T, want SettingsFrame", got)
+		t.Fatalf("ReceiveFrame() type = %T, want SettingsFrame", event.Frame)
 	}
 	if len(typed.Settings) != 1 || typed.Settings[0].ID != frame.SettingEnablePush {
 		t.Fatalf("Settings = %#v", typed.Settings)
@@ -186,6 +186,48 @@ func TestReceiveSettingsUpdatesRequestCodecHeaderTableSize(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("request header block after peer SETTINGS = %x, want %x", got, want)
+	}
+}
+
+func TestReceiveFrameEventDecodesSplitHeaders(t *testing.T) {
+	t.Parallel()
+
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+
+	c := NewWithConn(left)
+	codec := hpack.NewCodec(4096)
+	block, err := codec.Encode([]hpack.HeaderField{
+		{Name: ":status", Value: "200"},
+		{Name: "content-type", Value: "text/plain"},
+	})
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+	split := len(block) / 2
+	go func() {
+		first, _ := frame.NewHeadersFrame(1, 0, block[:split]).MarshalBinary()
+		second, _ := frame.NewContinuationFrame(1, frame.FlagContinuationEndHeaders, block[split:]).MarshalBinary()
+		_, _ = right.Write(append(first, second...))
+	}()
+
+	event, err := c.ReceiveFrame()
+	if err != nil {
+		t.Fatalf("ReceiveFrame(HEADERS) error = %v", err)
+	}
+	if event.HeaderBlockComplete || len(event.Headers) != 0 {
+		t.Fatalf("HEADERS event = %#v, want pending header block", event)
+	}
+	event, err = c.ReceiveFrame()
+	if err != nil {
+		t.Fatalf("ReceiveFrame(CONTINUATION) error = %v", err)
+	}
+	if event.DecodeError != nil {
+		t.Fatalf("FrameEvent.DecodeError = %v", event.DecodeError)
+	}
+	if !event.HeaderBlockComplete || event.StreamID != 1 || fieldValue(event.Headers, ":status") != "200" {
+		t.Fatalf("CONTINUATION event = %#v, want decoded headers", event)
 	}
 }
 

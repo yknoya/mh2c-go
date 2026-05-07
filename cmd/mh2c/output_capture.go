@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/yknoya/mh2c-go/client"
 	"github.com/yknoya/mh2c-go/frame"
 	"github.com/yknoya/mh2c-go/hpack"
 )
@@ -43,21 +44,16 @@ func newAutoCaptureManager(bodyPath, headersPath string) *captureManager {
 	}
 }
 
-func (o *outputController) captureReceived(streamID uint32, headers []hpack.HeaderField, endStream bool, f frame.Frame) {
+func (o *outputController) captureReceived(event client.FrameEvent) {
 	if o.capture == nil {
 		return
 	}
 
-	switch typed := f.(type) {
-	case frame.HeadersFrame:
-		if len(headers) > 0 {
-			o.capture.RecordHeaders(streamID, headers, endStream)
-		}
-	case frame.ContinuationFrame:
-		if len(headers) > 0 {
-			o.capture.RecordHeaders(streamID, headers, endStream)
-		}
-	case frame.DataFrame:
+	if event.HeaderBlockComplete && len(event.Headers) > 0 {
+		o.capture.RecordHeaders(event.StreamID, event.Headers, event.EndStream)
+	}
+
+	if typed, ok := event.Frame.(frame.DataFrame); ok {
 		o.capture.RecordData(typed.Header().StreamID, typed.Data, typed.Header().Flags&frame.FlagDataEndStream != 0)
 	}
 }

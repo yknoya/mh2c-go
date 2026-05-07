@@ -142,8 +142,8 @@ func run(parent context.Context, args []string, stdin io.Reader, stdout, stderr 
 
 	if cfg.sendGoAway && !sawGoAway {
 		goAway := frame.NewGoAwayFrame(streamID, frame.ErrNo, nil)
-		if err := h2c.SendFrame(goAway); err == nil {
-			_ = controller.HandleSent(h2c, goAway)
+		if event, err := h2c.SendFrame(goAway); err == nil {
+			_ = controller.HandleSent(event)
 		}
 	}
 	return controller.Flush()
