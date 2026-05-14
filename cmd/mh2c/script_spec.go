@@ -35,6 +35,16 @@ var scriptConnectionFields = []scriptFieldSpec{
 	{name: "max_table_size", kind: scriptNumber},
 }
 
+var scriptCommonActionFields = []scriptFieldSpec{
+	{name: "repeat", kind: scriptNumber},
+	{name: "stream_id_step", kind: scriptNumber},
+}
+
+var scriptCommonActionNotes = []string{
+	"repeat must be greater than 0 when set.",
+	"stream_id_step requires repeat and an action with stream_id.",
+}
+
 var scriptActionSpecs = []scriptActionSpec{
 	{
 		name: "preface",
@@ -197,7 +207,8 @@ func writeScriptActionDescription(w io.Writer, spec scriptActionSpec) error {
 	if _, err := fmt.Fprintf(w, "Action: %s\n", spec.name); err != nil {
 		return err
 	}
-	if len(spec.fields) == 0 {
+	fields := scriptActionFields(spec)
+	if len(fields) == 0 {
 		if _, err := fmt.Fprintln(w, "Fields: none"); err != nil {
 			return err
 		}
@@ -205,7 +216,7 @@ func writeScriptActionDescription(w io.Writer, spec scriptActionSpec) error {
 		if _, err := fmt.Fprintln(w, "Fields:"); err != nil {
 			return err
 		}
-		for _, field := range spec.fields {
+		for _, field := range fields {
 			required := "optional"
 			if field.required {
 				required = "required"
@@ -230,11 +241,13 @@ func writeScriptActionDescription(w io.Writer, spec scriptActionSpec) error {
 			return err
 		}
 	}
-	if len(spec.notes) > 0 {
+	notes := append([]string(nil), spec.notes...)
+	notes = append(notes, scriptCommonActionNotes...)
+	if len(notes) > 0 {
 		if _, err := fmt.Fprintln(w, "Notes:"); err != nil {
 			return err
 		}
-		for _, note := range spec.notes {
+		for _, note := range notes {
 			if _, err := fmt.Fprintf(w, "  - %s\n", note); err != nil {
 				return err
 			}
@@ -272,8 +285,11 @@ func validateScript(script scriptFile) error {
 }
 
 func validateScriptAction(spec scriptActionSpec, action scriptTable) error {
-	fields := append([]scriptFieldSpec{{name: "type", kind: scriptString, required: true}}, spec.fields...)
+	fields := append([]scriptFieldSpec{{name: "type", kind: scriptString, required: true}}, scriptActionFields(spec)...)
 	if err := validateScriptTable("action", action, fields); err != nil {
+		return err
+	}
+	if err := validateActionRepeat(spec, action); err != nil {
 		return err
 	}
 
@@ -369,6 +385,54 @@ func validateScriptAction(spec scriptActionSpec, action scriptTable) error {
 		return validateReceiveAction(action)
 	}
 	return nil
+}
+
+func scriptActionFields(spec scriptActionSpec) []scriptFieldSpec {
+	fields := make([]scriptFieldSpec, 0, len(spec.fields)+len(scriptCommonActionFields))
+	fields = append(fields, spec.fields...)
+	fields = append(fields, scriptCommonActionFields...)
+	return fields
+}
+
+func validateActionRepeat(spec scriptActionSpec, action scriptTable) error {
+	repeat, err := parseActionRepeat(action)
+	if err != nil {
+		return err
+	}
+	if !repeat.hasStreamIDStep {
+		return nil
+	}
+	if !scriptActionHasField(spec, "stream_id") {
+		return fmt.Errorf("stream_id_step requires an action with stream_id")
+	}
+	if _, ok := action["stream_id"]; !ok {
+		return fmt.Errorf("stream_id_step requires stream_id")
+	}
+	baseStreamID, err := action.requireUint32("stream_id")
+	if err != nil {
+		return err
+	}
+	if repeat.streamIDStep == 0 || repeat.count == 1 {
+		return nil
+	}
+	maxStreamID := uint64(^uint32(0))
+	if uint64(baseStreamID) > maxStreamID {
+		return fmt.Errorf("stream_id must fit in uint32")
+	}
+	maxIterations := (maxStreamID-uint64(baseStreamID))/uint64(repeat.streamIDStep) + 1
+	if uint64(repeat.count) > maxIterations {
+		return fmt.Errorf("stream_id_step overflows stream_id")
+	}
+	return nil
+}
+
+func scriptActionHasField(spec scriptActionSpec, name string) bool {
+	for _, field := range spec.fields {
+		if field.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func validateScriptTable(scope string, table scriptTable, fields []scriptFieldSpec) error {

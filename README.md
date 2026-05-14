@@ -113,6 +113,7 @@ Other checked-in examples:
 
 ```sh
 ./bin/mh2c script run --script-file ./examples/unusual-raw-sequence.toml
+./bin/mh2c script run --script-file ./examples/window-update-repeat.toml
 ./bin/mh2c observe --host nghttp2.org --output jsonl | go run ./examples/jsonl-summary
 ```
 
@@ -130,7 +131,32 @@ script file:
 Reusable script files live under [`examples/`](./examples). A normal request
 flow is available in [`examples/request.toml`](./examples/request.toml), and
 `examples/unusual-raw-sequence.toml` shows how to keep raw protocol details
-visible.
+visible. `examples/window-update-repeat.toml` shows how to repeat an action.
+
+Repeat one action:
+
+```toml
+[[action]]
+type = "window_update"
+stream_id = 0
+increment = 65535
+repeat = 10
+```
+
+Advance stream IDs while repeating:
+
+```toml
+[[action]]
+type = "headers"
+stream_id = 1
+stream_id_step = 2
+repeat = 3
+flags = ["END_HEADERS", "END_STREAM"]
+headers = [
+  ":method: GET",
+  ":path: /",
+]
+```
 
 ### Notes
 
@@ -171,6 +197,8 @@ Script mode:
   `data`, `ping`, `goaway`, `window_update`, `rst_stream`, `priority`,
   `push_promise`, `raw`, and `receive`
 - `sleep` uses `duration_ms = <int>` and prints progress such as `>> SLEEP 500ms`
+- every script action accepts `repeat = <int>` to run the same action multiple times
+- actions with `stream_id` can also use `stream_id_step = <int>` with `repeat` to advance the stream ID per iteration
 - the script parser accepts the TOML subset used in the example above:
   strings, integers, booleans, string arrays, `[connection]`, and `[[action]]`
 

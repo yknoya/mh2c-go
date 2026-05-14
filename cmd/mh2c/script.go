@@ -79,50 +79,121 @@ func executeScript(h2c *client.Client, script scriptFile, out *outputController)
 	sawGoAway := false
 
 	for index, action := range script.actions {
-		actionType, err := action.requireString("type")
+		repeat, err := parseActionRepeat(action)
 		if err != nil {
 			return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
 		}
-
-		switch actionType {
-		case "preface":
-			if err := h2c.SendConnectionPreface(); err != nil {
-				return sawGoAway, err
-			}
-			if err := out.PrintNotice("sent", "preface", "CONNECTION_PREFACE"); err != nil {
-				return sawGoAway, err
-			}
-		case "sleep":
-			duration, err := parseSleepDuration(action)
+		for iteration := int64(0); iteration < repeat.count; iteration++ {
+			iterAction, err := actionForRepeatIteration(action, repeat, iteration)
 			if err != nil {
-				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
+				return sawGoAway, formatScriptActionError(index, repeat.count, iteration, err)
 			}
-			if err := out.PrintNotice("sent", "sleep", fmt.Sprintf("SLEEP %s", duration)); err != nil {
-				return sawGoAway, err
-			}
-			time.Sleep(duration)
-		case "receive":
-			gotGoAway, err := executeReceiveAction(h2c, action, out)
+			gotGoAway, err := executeScriptAction(h2c, iterAction, out)
 			if err != nil {
-				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
+				return sawGoAway, formatScriptActionError(index, repeat.count, iteration, err)
 			}
 			sawGoAway = sawGoAway || gotGoAway
-		default:
-			sent, err := buildScriptFrame(h2c, action)
-			if err != nil {
-				return sawGoAway, fmt.Errorf("action %d: %w", index+1, err)
-			}
-			event, err := h2c.SendFrame(sent)
-			if err != nil {
-				return sawGoAway, err
-			}
-			if err := out.HandleSent(event); err != nil {
-				return sawGoAway, err
-			}
 		}
 	}
 
 	return sawGoAway, nil
+}
+
+type actionRepeat struct {
+	count           int64
+	streamIDStep    uint32
+	hasStreamIDStep bool
+}
+
+func parseActionRepeat(action scriptTable) (actionRepeat, error) {
+	repeat := actionRepeat{count: 1}
+	_, hasRepeat := action["repeat"]
+	if count, ok, err := action.intValue("repeat"); err != nil {
+		return actionRepeat{}, err
+	} else if ok {
+		if count <= 0 {
+			return actionRepeat{}, fmt.Errorf("repeat must be > 0")
+		}
+		repeat.count = count
+	}
+	if step, ok, err := action.optionalUint32("stream_id_step"); err != nil {
+		return actionRepeat{}, err
+	} else if ok {
+		if !hasRepeat {
+			return actionRepeat{}, fmt.Errorf("stream_id_step requires repeat")
+		}
+		repeat.streamIDStep = step
+		repeat.hasStreamIDStep = true
+	}
+	return repeat, nil
+}
+
+func actionForRepeatIteration(action scriptTable, repeat actionRepeat, iteration int64) (scriptTable, error) {
+	if !repeat.hasStreamIDStep {
+		return action, nil
+	}
+	baseStreamID, err := action.requireUint32("stream_id")
+	if err != nil {
+		return nil, err
+	}
+	streamID := uint64(baseStreamID) + uint64(repeat.streamIDStep)*uint64(iteration)
+	if streamID > uint64(^uint32(0)) {
+		return nil, fmt.Errorf("stream_id overflows uint32")
+	}
+	out := make(scriptTable, len(action))
+	for key, value := range action {
+		out[key] = value
+	}
+	out["stream_id"] = scriptValue{kind: scriptNumber, number: int64(streamID)}
+	return out, nil
+}
+
+func formatScriptActionError(index int, repeatCount int64, iteration int64, err error) error {
+	if repeatCount == 1 {
+		return fmt.Errorf("action %d: %w", index+1, err)
+	}
+	return fmt.Errorf("action %d iteration %d: %w", index+1, iteration+1, err)
+}
+
+func executeScriptAction(h2c *client.Client, action scriptTable, out *outputController) (bool, error) {
+	actionType, err := action.requireString("type")
+	if err != nil {
+		return false, err
+	}
+
+	switch actionType {
+	case "preface":
+		if err := h2c.SendConnectionPreface(); err != nil {
+			return false, err
+		}
+		if err := out.PrintNotice("sent", "preface", "CONNECTION_PREFACE"); err != nil {
+			return false, err
+		}
+	case "sleep":
+		duration, err := parseSleepDuration(action)
+		if err != nil {
+			return false, err
+		}
+		if err := out.PrintNotice("sent", "sleep", fmt.Sprintf("SLEEP %s", duration)); err != nil {
+			return false, err
+		}
+		time.Sleep(duration)
+	case "receive":
+		return executeReceiveAction(h2c, action, out)
+	default:
+		sent, err := buildScriptFrame(h2c, action)
+		if err != nil {
+			return false, err
+		}
+		event, err := h2c.SendFrame(sent)
+		if err != nil {
+			return false, err
+		}
+		if err := out.HandleSent(event); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
 }
 
 func parseSleepDuration(action scriptTable) (time.Duration, error) {

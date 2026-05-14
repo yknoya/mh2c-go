@@ -66,6 +66,32 @@ duration_ms = 250
 	}
 }
 
+func TestParseScriptWithRepeatFields(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "headers"
+stream_id = 1
+stream_id_step = 2
+repeat = 3
+flags = ["END_HEADERS", "END_STREAM"]
+headers = [
+  ":method: GET",
+  ":path: /",
+]
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	if got, ok, err := script.actions[0].intValue("repeat"); err != nil || !ok || got != 3 {
+		t.Fatalf("repeat = %d, ok = %t, err = %v", got, ok, err)
+	}
+	if got, ok, err := script.actions[0].intValue("stream_id_step"); err != nil || !ok || got != 2 {
+		t.Fatalf("stream_id_step = %d, ok = %t, err = %v", got, ok, err)
+	}
+}
+
 func TestParseScriptAcceptsTOMLStringArrays(t *testing.T) {
 	t.Parallel()
 
@@ -340,6 +366,119 @@ func TestExecuteScriptSleepOutputsProgress(t *testing.T) {
 	}
 }
 
+func TestExecuteScriptRepeatsWindowUpdate(t *testing.T) {
+	t.Parallel()
+
+	conn := &scriptedConn{}
+	h2c := client.NewWithConn(conn, client.WithMaxDynamicTableSize(4096))
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "script",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	sawGoAway, err := executeScript(h2c, scriptFile{
+		actions: []scriptTable{
+			{
+				"type":      {kind: scriptString, str: "window_update"},
+				"stream_id": {kind: scriptNumber, number: 0},
+				"increment": {kind: scriptNumber, number: 1024},
+				"repeat":    {kind: scriptNumber, number: 10},
+			},
+		},
+	}, controller)
+	if err != nil {
+		t.Fatalf("executeScript() error = %v", err)
+	}
+	if sawGoAway {
+		t.Fatal("executeScript() sawGoAway = true, want false")
+	}
+	const frameSize = 13
+	if got, want := conn.writes.Len(), 10*frameSize; got != want {
+		t.Fatalf("written bytes = %d, want %d", got, want)
+	}
+	for i := 0; i < 10; i++ {
+		header, err := frame.ParseHeader(conn.writes.Bytes()[i*frameSize : i*frameSize+9])
+		if err != nil {
+			t.Fatalf("ParseHeader(%d) error = %v", i, err)
+		}
+		if header.Type != frame.TypeWindowUpdate || header.StreamID != 0 || header.Length != 4 {
+			t.Fatalf("header %d = %#v, want WINDOW_UPDATE stream 0 length 4", i, header)
+		}
+	}
+	if got := strings.Count(out.String(), ">> WINDOW_UPDATE stream=0"); got != 10 {
+		t.Fatalf("WINDOW_UPDATE output count = %d, want 10; output = %q", got, out.String())
+	}
+}
+
+func TestExecuteScriptRepeatAdvancesStreamIDForHeaders(t *testing.T) {
+	t.Parallel()
+
+	conn := &scriptedConn{}
+	h2c := client.NewWithConn(conn, client.WithMaxDynamicTableSize(4096))
+	var out bytes.Buffer
+	controller, err := newOutputController(&out, config{
+		mode:            "script",
+		outputFormat:    outputFormatText,
+		dataFormat:      dataFormatBoth,
+		decodeHeaders:   true,
+		showHeaderBlock: true,
+	})
+	if err != nil {
+		t.Fatalf("newOutputController() error = %v", err)
+	}
+
+	sawGoAway, err := executeScript(h2c, scriptFile{
+		actions: []scriptTable{
+			{
+				"type":           {kind: scriptString, str: "headers"},
+				"stream_id":      {kind: scriptNumber, number: 1},
+				"stream_id_step": {kind: scriptNumber, number: 2},
+				"repeat":         {kind: scriptNumber, number: 3},
+				"flags":          {kind: scriptStringList, list: []string{"END_HEADERS", "END_STREAM"}},
+				"headers":        {kind: scriptStringList, list: []string{":method: GET", ":path: /"}},
+			},
+		},
+	}, controller)
+	if err != nil {
+		t.Fatalf("executeScript() error = %v", err)
+	}
+	if sawGoAway {
+		t.Fatal("executeScript() sawGoAway = true, want false")
+	}
+
+	raw := conn.writes.Bytes()
+	offset := 0
+	for i, wantStreamID := range []uint32{1, 3, 5} {
+		if offset+9 > len(raw) {
+			t.Fatalf("frame %d offset %d exceeds written bytes %d", i, offset, len(raw))
+		}
+		header, err := frame.ParseHeader(raw[offset : offset+9])
+		if err != nil {
+			t.Fatalf("ParseHeader(%d) error = %v", i, err)
+		}
+		if header.Type != frame.TypeHeaders || header.StreamID != wantStreamID {
+			t.Fatalf("header %d = %#v, want HEADERS stream %d", i, header, wantStreamID)
+		}
+		offset += 9 + int(header.Length)
+	}
+	if offset != len(raw) {
+		t.Fatalf("parsed bytes = %d, written bytes = %d", offset, len(raw))
+	}
+	text := out.String()
+	for _, want := range []string{">> HEADERS stream=1", ">> HEADERS stream=3", ">> HEADERS stream=5"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output = %q, want %q", text, want)
+		}
+	}
+}
+
 func TestDescribeScriptActionsIncludesKnownTypes(t *testing.T) {
 	t.Parallel()
 
@@ -363,7 +502,7 @@ func TestDescribeScriptActionHeaders(t *testing.T) {
 		t.Fatalf("describeScriptActions() error = %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"Action: headers", "stream_id", "headers", "block_hex", "END_HEADERS"} {
+	for _, want := range []string{"Action: headers", "stream_id", "headers", "block_hex", "repeat", "stream_id_step", "END_HEADERS"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("output = %q, want %q", text, want)
 		}
@@ -435,6 +574,85 @@ extra = "value"
 	err = validateScript(script)
 	if err == nil || !strings.Contains(err.Error(), "action.extra is not supported") {
 		t.Fatalf("validateScript() error = %v, want unknown field", err)
+	}
+}
+
+func TestValidateScriptRejectsInvalidRepeat(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "preface"
+repeat = 0
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "repeat must be > 0") {
+		t.Fatalf("validateScript() error = %v, want repeat validation", err)
+	}
+}
+
+func TestValidateScriptRejectsStreamIDStepWithoutRepeat(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "headers"
+stream_id = 1
+stream_id_step = 2
+flags = ["END_HEADERS"]
+headers = [
+  ":method: GET",
+  ":path: /",
+]
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "stream_id_step requires repeat") {
+		t.Fatalf("validateScript() error = %v, want stream_id_step repeat validation", err)
+	}
+}
+
+func TestValidateScriptRejectsStreamIDStepWithoutStreamID(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "ping"
+repeat = 2
+stream_id_step = 2
+data = "abcdefgh"
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "stream_id_step requires an action with stream_id") {
+		t.Fatalf("validateScript() error = %v, want stream_id_step stream_id validation", err)
+	}
+}
+
+func TestValidateScriptRejectsStreamIDStepOverflow(t *testing.T) {
+	t.Parallel()
+
+	script, err := parseScript(`
+[[action]]
+type = "window_update"
+stream_id = 4294967295
+stream_id_step = 1
+repeat = 2
+increment = 1024
+`)
+	if err != nil {
+		t.Fatalf("parseScript() error = %v", err)
+	}
+	err = validateScript(script)
+	if err == nil || !strings.Contains(err.Error(), "stream_id_step overflows stream_id") {
+		t.Fatalf("validateScript() error = %v, want stream_id overflow validation", err)
 	}
 }
 

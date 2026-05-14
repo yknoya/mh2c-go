@@ -1,0 +1,25 @@
+[connection]
+url = "https://nghttp2.org/httpbin/headers"
+send_goaway = false
+timeout_ms = 5000
+
+[[action]]
+type = "preface"
+
+[[action]]
+type = "settings"
+settings = [
+  "ENABLE_PUSH=0",
+  "INITIAL_WINDOW_SIZE=65535",
+]
+
+[[action]]
+type = "receive"
+until = "settings"
+ack_settings = true
+
+[[action]]
+type = "window_update"
+stream_id = 0
+increment = 65535
+repeat = 10
